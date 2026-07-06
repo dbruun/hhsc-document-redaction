@@ -5,14 +5,8 @@ import styles from './DocumentUpload.module.css';
 
 const ACCEPTED_TYPES = [
   'application/pdf',
-  'image/jpeg',
-  'image/png',
-  'image/tiff',
-  'image/bmp',
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-  'text/html',
+  'text/plain',
 ];
 
 const ACCEPT_STRING = ACCEPTED_TYPES.join(',');
@@ -31,7 +25,7 @@ export default function DocumentUpload({ onStatusChange }: DocumentUploadProps) 
       if (!ACCEPTED_TYPES.includes(file.type)) {
         onStatusChange({
           kind: 'error',
-          message: `Unsupported file type "${file.type}". Please upload a PDF, DOCX, image, or HTML file.`,
+          message: `Unsupported file type "${file.type}". Please upload a PDF, DOCX, or TXT file.`,
         });
         return;
       }
@@ -107,7 +101,7 @@ export default function DocumentUpload({ onStatusChange }: DocumentUploadProps) 
         Drag &amp; drop your document here, or <span className={styles.link}>browse files</span>
       </p>
       <p className={styles.secondaryText}>
-        Supports PDF, DOCX, XLSX, PPTX, JPEG, PNG, TIFF, BMP, HTML &mdash; up to {MAX_SIZE_MB} MB
+        Supports PDF, DOCX, TXT &mdash; up to {MAX_SIZE_MB} MB
       </p>
     </div>
   );

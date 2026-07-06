@@ -9,8 +9,6 @@ services:
       - '5000:8080'
     environment:
       - ASPNETCORE_ENVIRONMENT=Production
-      - Azure__DocumentIntelligence__Endpoint=${AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT}
-      - Azure__DocumentIntelligence__Key=${AZURE_DOCUMENT_INTELLIGENCE_KEY}
       - Azure__Language__Endpoint=${AZURE_LANGUAGE_ENDPOINT}
       - Azure__Language__Key=${AZURE_LANGUAGE_KEY}
       - Azure__Storage__ConnectionString=${AZURE_STORAGE_CONNECTION_STRING}

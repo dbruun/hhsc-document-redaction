@@ -20,11 +20,9 @@ A **React + .NET 10** web application that uses **Microsoft Azure AI Foundry** s
 │                                                              │
 │  DocumentController                                          │
 │    └─ DocumentRedactionOrchestrator                         │
-│         ├─ BlobStorageService       → Azure Blob Storage     │
-│         ├─ DocumentExtractionService → Azure AI Document     │
-│         │                              Intelligence          │
-│         └─ PiiRedactionService      → Azure AI Language      │
-│                                        (PII detection)       │
+│         ├─ BlobStorageService    → Azure Blob Storage        │
+│         └─ DocumentPiiRedaction  → Azure AI Language         │
+│              Service               (native-document PII)     │
 └──────────────────────────────────────────────────────────────┘
 ```
 
@@ -32,15 +30,18 @@ A **React + .NET 10** web application that uses **Microsoft Azure AI Foundry** s
 
 | Step | Service | What happens |
 |------|---------|-------------|
-| 1 | Azure Blob Storage | Original document stored in `original/<jobId>.<ext>` |
-| 2 | Azure AI Document Intelligence (`prebuilt-read`) | Full text extracted from PDF / DOCX / image |
-| 3 | Azure AI Language – PII Recognition | All PII entities detected; Azure returns redacted text with entities replaced by `*` |
-| 4 | Azure Blob Storage | Redacted plain-text stored in `redacted/<jobId>.txt` |
-| 5 | API response | Original text, redacted text, entity list, and blob URLs returned to the client |
+| 1 | Azure Blob Storage | Original document stored in `original/<jobId>.<ext>` (private) |
+| 2 | Azure AI Language – native-document PII | Document submitted via SAS URL; Language service extracts text, detects and redacts all PII entities using the character-mask policy, writes `<jobId>.result.json` + redacted binary to the target container |
+| 3 | Azure Blob Storage | Redacted plain-text stored in `redacted/<jobId>.txt` |
+| 4 | API response | Original text (reconstructed from entity offsets), redacted text, entity list, and blob URLs returned to the client |
 
 ### Documents supported
 
-`PDF · DOCX · XLSX · PPTX · JPEG · PNG · TIFF · BMP · HTML` — up to **50 MB**.
+`PDF · DOCX · TXT` — up to **50 MB**.
+
+> The Azure AI Language native-document endpoint currently supports **PDF, DOCX, and TXT** only.
+> Image-based document scanning (JPEG, PNG, TIFF, BMP) and HTML are not supported by the
+> native-document PII feature.
 
 ---
 
@@ -56,23 +57,24 @@ A **React + .NET 10** web application that uses **Microsoft Azure AI Foundry** s
 
 ## Azure Resource Setup
 
-### 1. Azure AI Document Intelligence
+### 1. Azure AI Language
 
-1. In the Azure Portal, create a **Document Intelligence** resource (region: any supported region).
+1. In the Azure Portal, create a **single-service Language** resource (not a multi-service resource—the native-document PII feature requires a dedicated Language endpoint).
 2. Copy the **Endpoint** and one of the **Keys** from *Keys and Endpoint*.
 
-### 2. Azure AI Language (Text Analytics)
+> **Region note:** The native-document PII feature (`/language/analyze-documents/jobs`) requires
+> a geographic region (e.g. **West US 2**) — not the *Global* tier.
 
-1. Create an **Azure AI Language** resource (or use an existing multi-service **Azure AI Services** resource).
-2. Copy the **Endpoint** and **Key**.
-
-> The `RecognizePiiEntities` feature is enabled by default on all Language resources.
-
-### 3. Azure Blob Storage
+### 2. Azure Blob Storage
 
 1. Create a **Storage Account**.
 2. Copy the **Connection String** from *Access Keys*.
 3. Optionally create a container named `documents` (the app creates it automatically if absent).
+4. Grant the Language resource access to the storage account using either:
+   - **Managed Identity** (recommended for production): assign the *Storage Blob Data Contributor*
+     role to the Language resource's managed identity.
+   - **Shared Access Signatures** (used by default in this app): SAS tokens are generated
+     automatically at request time using the storage connection string.
 
 ---
 
@@ -83,18 +85,14 @@ A **React + .NET 10** web application that uses **Microsoft Azure AI Foundry** s
 ```bash
 cd backend/DocumentRedaction.API
 
-dotnet user-secrets set "Azure:DocumentIntelligence:Endpoint" "https://<your-resource>.cognitiveservices.azure.com/"
-dotnet user-secrets set "Azure:DocumentIntelligence:Key"      "<key>"
-dotnet user-secrets set "Azure:Language:Endpoint"             "https://<your-resource>.cognitiveservices.azure.com/"
-dotnet user-secrets set "Azure:Language:Key"                  "<key>"
-dotnet user-secrets set "Azure:Storage:ConnectionString"      "<connection-string>"
+dotnet user-secrets set "Azure:Language:Endpoint"        "https://<your-resource>.cognitiveservices.azure.com/"
+dotnet user-secrets set "Azure:Language:Key"             "<key>"
+dotnet user-secrets set "Azure:Storage:ConnectionString" "<connection-string>"
 ```
 
 ### Option B — Environment variables
 
 ```
-Azure__DocumentIntelligence__Endpoint=https://...
-Azure__DocumentIntelligence__Key=...
 Azure__Language__Endpoint=https://...
 Azure__Language__Key=...
 Azure__Storage__ConnectionString=...
@@ -152,31 +150,30 @@ hhsc-document-redaction/
 ├── backend/
 │   └── DocumentRedaction.API/
 │       ├── Controllers/
-│       │   └── DocumentController.cs       # POST /api/document/redact
+│       │   └── DocumentController.cs              # POST /api/document/redact
 │       ├── Models/
-│       │   └── RedactionModels.cs          # Request / Response records
+│       │   └── RedactionModels.cs                 # Request / Response records
 │       ├── Services/
-│       │   ├── BlobStorageService.cs        # Azure Blob Storage
-│       │   ├── DocumentExtractionService.cs # Azure AI Document Intelligence
-│       │   ├── PiiRedactionService.cs       # Azure AI Language – PII
-│       │   ├── DocumentRedactionOrchestrator.cs # Pipeline orchestrator
-│       │   └── I*.cs                        # Service interfaces
+│       │   ├── BlobStorageService.cs              # Azure Blob Storage + SAS helpers
+│       │   ├── DocumentPiiRedactionService.cs     # Azure AI Language native-document PII
+│       │   ├── DocumentRedactionOrchestrator.cs   # Pipeline orchestrator
+│       │   └── I*.cs                              # Service interfaces
 │       ├── Program.cs
 │       ├── appsettings.json
 │       └── Dockerfile
 ├── frontend/
 │   ├── src/
 │   │   ├── components/
-│   │   │   ├── DocumentUpload.tsx          # Drag-and-drop upload zone
-│   │   │   ├── LoadingSpinner.tsx          # Processing indicator
-│   │   │   └── RedactionResult.tsx         # Results view + entity table
+│   │   │   ├── DocumentUpload.tsx                 # Drag-and-drop upload zone
+│   │   │   ├── LoadingSpinner.tsx                 # Processing indicator
+│   │   │   └── RedactionResult.tsx                # Results view + entity table
 │   │   ├── services/
-│   │   │   └── api.ts                      # fetch wrapper
+│   │   │   └── api.ts                             # fetch wrapper
 │   │   ├── types/
-│   │   │   └── index.ts                    # TypeScript interfaces
+│   │   │   └── index.ts                           # TypeScript interfaces
 │   │   └── App.tsx
-│   ├── nginx.conf                          # Production reverse-proxy config
-│   ├── vite.config.ts                      # Dev proxy: /api → :5000
+│   ├── nginx.conf                                 # Production reverse-proxy config
+│   ├── vite.config.ts                             # Dev proxy: /api → :5000
 │   └── Dockerfile
 ├── docker-compose.yml
 ├── .env.example
@@ -225,10 +222,11 @@ Accepts a `multipart/form-data` request with a single `file` field.
 ## Security considerations
 
 - Documents are stored in a **private** Blob Storage container. No public access is configured.
+- SAS tokens are generated with minimal required permissions and a 1-hour expiry.
 - API keys are never committed to source control — use User Secrets or environment variables.
 - The `RequestSizeLimit` attribute limits uploads to 50 MB at the controller level.
 - CORS is restricted to the configured `AllowedOrigins` list.
-- The frontend sanitises file type and size client-side before submitting.
+- The frontend validates file type and size client-side before submitting.
 
 ---
 

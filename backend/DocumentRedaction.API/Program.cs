@@ -6,10 +6,12 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 
+// HttpClient factory used by DocumentPiiRedactionService
+builder.Services.AddHttpClient(nameof(DocumentPiiRedactionService));
+
 // Register Azure AI Foundry services
 builder.Services.AddSingleton<IBlobStorageService, BlobStorageService>();
-builder.Services.AddSingleton<IDocumentExtractionService, DocumentExtractionService>();
-builder.Services.AddSingleton<IPiiRedactionService, PiiRedactionService>();
+builder.Services.AddSingleton<IDocumentPiiRedactionService, DocumentPiiRedactionService>();
 builder.Services.AddScoped<IDocumentRedactionOrchestrator, DocumentRedactionOrchestrator>();
 
 // CORS – allow the React dev server and any configured production origin
