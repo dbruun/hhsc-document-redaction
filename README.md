@@ -70,13 +70,11 @@ You only need the **API key** — the endpoint is already set as the default in 
 ### 2. Azure Blob Storage
 
 1. Create a **Storage Account**.
-2. Copy the **Connection String** from *Access Keys*.
-3. Optionally create a container named `documents` (the app creates it automatically if absent).
-4. Grant the Language resource access to the storage account using either:
-   - **Managed Identity** (recommended for production): assign the *Storage Blob Data Contributor*
-     role to the Language resource's managed identity.
-   - **Shared Access Signatures** (used by default in this app): SAS tokens are generated
-     automatically at request time using the storage connection string.
+2. Copy the **Blob service URI** from the storage account overview, for example `https://<account>.blob.core.windows.net`.
+3. Optionally create the containers `documents-unredacted` and `documents-redacted` (the app creates them automatically if absent).
+4. Grant the app identity the **Storage Blob Data Contributor** role on the storage account so it can upload and read blobs.
+5. Grant the same identity the **Storage Blob Delegator** role if it needs to mint user-delegation SAS tokens for the Language service.
+6. For local development, the signed-in user should have those same roles on the storage account.
 
 ---
 
@@ -88,20 +86,25 @@ You only need the **API key** — the endpoint is already set as the default in 
 cd backend/DocumentRedaction.API
 
 dotnet user-secrets set "Azure:Language:Key"             "<key>"
-dotnet user-secrets set "Azure:Storage:ConnectionString" "<connection-string>"
+dotnet user-secrets set "Azure:Storage:ServiceUri"       "https://<account>.blob.core.windows.net"
 ```
+
+Make sure you are signed in with an Azure identity that has access to the storage account, for example via `az login`, Visual Studio, or VS Code.
+If you want to pin the login to the tenant used for this app, sign in with tenant `d64bea8b-d6b8-4662-b544-534df0893609`.
 
 ### Option B — Environment variables
 
 ```
 Azure__Language__Key=...
-Azure__Storage__ConnectionString=...
-Azure__Storage__ContainerName=documents   # optional, default: documents
+Azure__Storage__ServiceUri=https://<account>.blob.core.windows.net
+Azure__Storage__UnredactedContainerName=documents-unredacted
+Azure__Storage__RedactedContainerName=documents-redacted
 ```
 
 ### Option C — Docker Compose
 
 Copy `.env.example` to `.env` and fill in your values, then see *Running with Docker Compose* below.
+The backend still uses identity-based auth for Storage, so the container must have access to an Azure identity source that can obtain tokens.
 
 ---
 
@@ -221,9 +224,10 @@ Accepts a `multipart/form-data` request with a single `file` field.
 
 ## Security considerations
 
-- Documents are stored in a **private** Blob Storage container. No public access is configured.
+- Documents are stored in **private** Blob Storage containers. No public access is configured.
 - SAS tokens are generated with minimal required permissions and a 1-hour expiry.
 - API keys are never committed to source control — use User Secrets or environment variables.
+- Storage access uses Entra ID / managed identity, not storage account keys.
 - The `RequestSizeLimit` attribute limits uploads to 50 MB at the controller level.
 - CORS is restricted to the configured `AllowedOrigins` list.
 - The frontend validates file type and size client-side before submitting.

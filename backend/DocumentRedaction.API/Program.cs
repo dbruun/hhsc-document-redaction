@@ -1,3 +1,5 @@
+using Azure.Core;
+using Azure.Identity;
 using DocumentRedaction.API.Services;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -8,6 +10,25 @@ builder.Services.AddEndpointsApiExplorer();
 
 // HttpClient factory used by DocumentPiiRedactionService
 builder.Services.AddHttpClient(nameof(DocumentPiiRedactionService));
+
+// ---------- Authentication ----------
+// The app authenticates to BOTH Azure Blob Storage and Azure AI Language using a
+// single Entra ID (Azure AD) identity — no account keys or subscription keys.
+// The backing Azure AI Language resource has local (key) auth disabled, so Entra ID
+// is the only supported path.
+//
+// DefaultAzureCredential resolves Managed Identity in Azure, or the signed-in developer
+// identity (VS / az login) locally. Pinning TenantId ensures every credential source
+// requests tokens for the resources' tenant, avoiding "Issuer validation failed" errors
+// on multi-tenant machines.
+var tenantId = builder.Configuration["Azure:TenantId"];
+var credentialOptions = new DefaultAzureCredentialOptions();
+if (!string.IsNullOrWhiteSpace(tenantId))
+{
+    credentialOptions.TenantId = tenantId;
+}
+TokenCredential credential = new DefaultAzureCredential(credentialOptions);
+builder.Services.AddSingleton(credential);
 
 // Register Azure AI Foundry services
 builder.Services.AddSingleton<IBlobStorageService, BlobStorageService>();

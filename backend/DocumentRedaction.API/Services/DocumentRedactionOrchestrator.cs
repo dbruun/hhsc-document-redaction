@@ -59,12 +59,7 @@ public sealed class DocumentRedactionOrchestrator : IDocumentRedactionOrchestrat
         // --- Step 2: Redact PII via Azure AI Language native-document endpoint ---
         var piiResult = await _piiRedactor.RedactDocumentAsync(originalBlobName, ct);
 
-        // Reconstruct the original extracted text from the redacted text + entity offsets.
-        // The 'characterMask' policy preserves span lengths so offsets are identical in
-        // both original and redacted text.
-        var extractedText = ReconstructOriginalText(piiResult.RedactedText, piiResult.Entities);
-
-        // --- Step 3: Store redacted text ---
+        // --- Step 3: Store the redaction summary text ---
         var redactedBlobName = $"redacted/{jobId}.txt";
         var redactedBlobUrl = await _blobStorage.UploadTextAsync(piiResult.RedactedText, redactedBlobName, ct);
 
@@ -77,7 +72,7 @@ public sealed class DocumentRedactionOrchestrator : IDocumentRedactionOrchestrat
             JobId = jobId,
             OriginalBlobUrl = originalBlobUrl,
             RedactedBlobUrl = redactedBlobUrl,
-            ExtractedText = extractedText,
+            ExtractedText = piiResult.ExtractedText,
             RedactedText = piiResult.RedactedText,
             RedactedEntities = piiResult.Entities,
             FileName = safeFileName,
@@ -87,39 +82,6 @@ public sealed class DocumentRedactionOrchestrator : IDocumentRedactionOrchestrat
     }
 
     // ─── Private helpers ────────────────────────────────────────────────────────
-
-    /// <summary>
-    /// Reverses the character-mask redaction to recover the original plain text.
-    /// Each entity carries the original PII text and the offset at which it
-    /// appeared; since the mask preserves span length the offset is identical
-    /// in both the original and the redacted string.
-    /// </summary>
-    private static string ReconstructOriginalText(
-        string redactedText,
-        IReadOnlyList<RedactedEntity> entities)
-    {
-        if (entities.Count == 0 || string.IsNullOrEmpty(redactedText))
-            return redactedText;
-
-        var chars = redactedText.ToCharArray();
-
-        foreach (var entity in entities)
-        {
-            // entity.Length is the character span reported by the Language service (in the
-            // original document text).  entity.Text.Length is the length of the C# string
-            // returned by the API.  They should always be equal for ASCII/BMP content, but
-            // can differ when surrogate pairs or combining characters are involved because the
-            // service may measure offsets in UTF-16 code units while the .Text value is a
-            // regular .NET string.  Taking the minimum is a safe defensive measure.
-            var copyLen = Math.Min(entity.Text.Length, entity.Length);
-            if (entity.Offset < 0 || entity.Offset + copyLen > chars.Length)
-                continue;
-
-            entity.Text.CopyTo(0, chars, entity.Offset, copyLen);
-        }
-
-        return new string(chars);
-    }
 
     private static void ValidateFile(IFormFile file)
     {

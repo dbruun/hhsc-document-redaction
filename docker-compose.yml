@@ -11,8 +11,9 @@ services:
       - ASPNETCORE_ENVIRONMENT=Production
       - Azure__Language__Endpoint=${AZURE_LANGUAGE_ENDPOINT:-https://derekgatewaytest.azure-api.net/multimodalsearch-resource}
       - Azure__Language__Key=${AZURE_LANGUAGE_KEY}
-      - Azure__Storage__ConnectionString=${AZURE_STORAGE_CONNECTION_STRING}
-      - Azure__Storage__ContainerName=${AZURE_STORAGE_CONTAINER_NAME:-documents}
+      - Azure__Storage__ServiceUri=${AZURE_STORAGE_SERVICE_URI}
+      - Azure__Storage__UnredactedContainerName=${AZURE_STORAGE_UNREDACTED_CONTAINER_NAME:-documents-unredacted}
+      - Azure__Storage__RedactedContainerName=${AZURE_STORAGE_REDACTED_CONTAINER_NAME:-documents-redacted}
       - AllowedOrigins__0=http://localhost:5173
     restart: unless-stopped
 

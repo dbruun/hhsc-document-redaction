@@ -27,10 +27,21 @@ public interface IDocumentPiiRedactionService
 public record DocumentPiiResult
 {
     /// <summary>
-    /// The extracted text content of the document with all detected PII
-    /// replaced by the same number of asterisk characters (<c>*</c>).
+    /// A line-per-entity view of the detected PII values (the native-document
+    /// endpoint does not return the full document text).
+    /// </summary>
+    public required string ExtractedText { get; init; }
+
+    /// <summary>
+    /// The character-masked counterpart of <see cref="ExtractedText"/>.
     /// </summary>
     public required string RedactedText { get; init; }
+
+    /// <summary>
+    /// URL of the redacted document the Language service wrote to the target
+    /// container.
+    /// </summary>
+    public required string RedactedDocumentUrl { get; init; }
 
     /// <summary>Per-entity metadata returned by the service.</summary>
     public required IReadOnlyList<RedactedEntity> Entities { get; init; }

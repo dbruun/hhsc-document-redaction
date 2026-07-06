@@ -12,14 +12,21 @@ public interface IBlobStorageService
     Task<string> UploadTextAsync(string text, string blobName, CancellationToken ct = default);
 
     /// <summary>
-    /// Generates a Shared Access Signature URL for a specific blob with the given permissions.
+    /// Generates a user-delegation SAS URL for a specific blob with the given permissions.
     /// </summary>
-    string GenerateBlobSasUrl(string blobName, BlobSasPermissions permissions, TimeSpan validity);
+    Task<string> GenerateBlobSasUrlAsync(
+        string blobName,
+        BlobSasPermissions permissions,
+        TimeSpan validity,
+        CancellationToken ct = default);
 
     /// <summary>
-    /// Generates a Shared Access Signature URL for the container with the given permissions.
+    /// Generates a user-delegation SAS URL for the container with the given permissions.
     /// </summary>
-    string GenerateContainerSasUrl(BlobContainerSasPermissions permissions, TimeSpan validity);
+    Task<string> GenerateContainerSasUrlAsync(
+        BlobContainerSasPermissions permissions,
+        TimeSpan validity,
+        CancellationToken ct = default);
 
     /// <summary>
     /// Downloads the text content of a blob identified by its full URL.

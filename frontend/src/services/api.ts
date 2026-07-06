@@ -14,8 +14,10 @@ export async function redactDocument(file: File): Promise<RedactionResponse> {
   if (!response.ok) {
     let message = `Request failed with status ${response.status}`;
     try {
-      const err = await response.json();
-      message = err.error ?? message;
+      const err = (await response.json()) as { error?: string; details?: string };
+      if (err.error) {
+        message = err.details ? `${err.error} — ${err.details}` : err.error;
+      }
     } catch {
       // ignore JSON parse error; keep the default message
     }
