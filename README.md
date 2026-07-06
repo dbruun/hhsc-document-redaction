@@ -57,13 +57,15 @@ A **React + .NET 10** web application that uses **Microsoft Azure AI Foundry** s
 
 ## Azure Resource Setup
 
-### 1. Azure AI Language
+### 1. Azure AI Language (via Azure AI Foundry Gateway)
 
-1. In the Azure Portal, create a **single-service Language** resource (not a multi-service resource—the native-document PII feature requires a dedicated Language endpoint).
-2. Copy the **Endpoint** and one of the **Keys** from *Keys and Endpoint*.
+The service is accessed through the pre-configured Azure AI Foundry API gateway:
 
-> **Region note:** The native-document PII feature (`/language/analyze-documents/jobs`) requires
-> a geographic region (e.g. **West US 2**) — not the *Global* tier.
+```
+https://derekgatewaytest.azure-api.net/multimodalsearch-resource
+```
+
+You only need the **API key** — the endpoint is already set as the default in `appsettings.json`. Set it via User Secrets or the `AZURE_LANGUAGE_KEY` environment variable (see *Configuration* below).
 
 ### 2. Azure Blob Storage
 
@@ -85,7 +87,6 @@ A **React + .NET 10** web application that uses **Microsoft Azure AI Foundry** s
 ```bash
 cd backend/DocumentRedaction.API
 
-dotnet user-secrets set "Azure:Language:Endpoint"        "https://<your-resource>.cognitiveservices.azure.com/"
 dotnet user-secrets set "Azure:Language:Key"             "<key>"
 dotnet user-secrets set "Azure:Storage:ConnectionString" "<connection-string>"
 ```
@@ -93,7 +94,6 @@ dotnet user-secrets set "Azure:Storage:ConnectionString" "<connection-string>"
 ### Option B — Environment variables
 
 ```
-Azure__Language__Endpoint=https://...
 Azure__Language__Key=...
 Azure__Storage__ConnectionString=...
 Azure__Storage__ContainerName=documents   # optional, default: documents
