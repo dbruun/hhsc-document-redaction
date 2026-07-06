@@ -1,0 +1,22 @@
+# Secrets / environment
+.env
+*.env.local
+
+# .NET build outputs
+**/bin/
+**/obj/
+*.user
+
+# Node / frontend
+frontend/node_modules/
+frontend/dist/
+
+# IDE
+.vscode/
+.idea/
+*.suo
+*.user
+
+# OS
+.DS_Store
+Thumbs.db
