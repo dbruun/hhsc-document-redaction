@@ -149,4 +149,71 @@ public sealed class BlobStorageService : IBlobStorageService
         return response.Value.Content.ToString();
     }
 
+    public async Task<BlobDownload> DownloadDocumentAsync(string blobUrl, CancellationToken ct = default)
+    {
+        var uri = new Uri(blobUrl);
+        var absolutePath = uri.AbsolutePath.TrimStart('/');
+        BlobContainerClient? containerClient = null;
+        string? blobName = null;
+
+        if (absolutePath.StartsWith(_unredactedContainerName + "/", StringComparison.OrdinalIgnoreCase))
+        {
+            containerClient = _unredactedContainer;
+            blobName = absolutePath[(_unredactedContainerName.Length + 1)..];
+        }
+        else if (absolutePath.StartsWith(_redactedContainerName + "/", StringComparison.OrdinalIgnoreCase))
+        {
+            containerClient = _redactedContainer;
+            blobName = absolutePath[(_redactedContainerName.Length + 1)..];
+        }
+
+        if (containerClient is null || string.IsNullOrWhiteSpace(blobName))
+            throw new InvalidOperationException(
+                $"Blob URL '{blobUrl}' does not belong to the configured storage containers.");
+
+        // Azure URL-encodes path segments; decode so the blob name matches storage.
+        blobName = Uri.UnescapeDataString(blobName);
+
+        _logger.LogInformation("Downloading document blob {BlobName}", blobName);
+        var blobClient = containerClient.GetBlobClient(blobName);
+        var response = await blobClient.DownloadContentAsync(ct);
+        var contentType = response.Value.Details.ContentType ?? "application/octet-stream";
+        return new BlobDownload(response.Value.Content, contentType);
+    }
+
+    public async Task<string> UploadToRedactedAsync(
+        BinaryData content, string blobName, string contentType, CancellationToken ct = default)
+    {
+        var blob = _redactedContainer.GetBlobClient(blobName);
+        var options = new BlobUploadOptions
+        {
+            HttpHeaders = new BlobHttpHeaders { ContentType = contentType }
+        };
+
+        _logger.LogInformation("Uploading redacted document blob {BlobName}", blobName);
+        await blob.UploadAsync(content.ToStream(), options, ct);
+        return blob.Uri.ToString();
+    }
+
+    public Task<BlobStream?> OpenOriginalDocumentAsync(string jobId, CancellationToken ct = default) =>
+        OpenByPrefixAsync(_unredactedContainer, $"original/{jobId}", ct);
+
+    public Task<BlobStream?> OpenRedactedDocumentAsync(string jobId, CancellationToken ct = default) =>
+        OpenByPrefixAsync(_redactedContainer, $"redacted/{jobId}", ct);
+
+    private async Task<BlobStream?> OpenByPrefixAsync(
+        BlobContainerClient container, string prefix, CancellationToken ct)
+    {
+        await foreach (var item in container.GetBlobsAsync(
+            traits: BlobTraits.None, states: BlobStates.None, prefix: prefix, cancellationToken: ct))
+        {
+            var blobClient = container.GetBlobClient(item.Name);
+            var response = await blobClient.DownloadStreamingAsync(cancellationToken: ct);
+            var contentType = response.Value.Details.ContentType ?? "application/octet-stream";
+            return new BlobStream(response.Value.Content, contentType, item.Name);
+        }
+
+        return null;
+    }
+
 }

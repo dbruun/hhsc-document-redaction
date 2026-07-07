@@ -58,4 +58,22 @@ public sealed class DocumentController : ControllerBase
                 });
         }
     }
+
+    /// <summary>Streams the original uploaded document for a job.</summary>
+    [HttpGet("{jobId}/original")]
+    public async Task<IActionResult> GetOriginal(string jobId, CancellationToken ct)
+    {
+        var doc = await _orchestrator.OpenOriginalAsync(jobId, ct);
+        if (doc is null) return NotFound();
+        return File(doc.Content, doc.ContentType);
+    }
+
+    /// <summary>Streams the redacted document for a job.</summary>
+    [HttpGet("{jobId}/redacted")]
+    public async Task<IActionResult> GetRedacted(string jobId, CancellationToken ct)
+    {
+        var doc = await _orchestrator.OpenRedactedAsync(jobId, ct);
+        if (doc is null) return NotFound();
+        return File(doc.Content, doc.ContentType);
+    }
 }

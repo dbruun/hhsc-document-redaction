@@ -33,4 +33,32 @@ public interface IBlobStorageService
     /// The blob must reside in the container this service manages.
     /// </summary>
     Task<string> DownloadTextBlobAsync(string blobUrl, CancellationToken ct = default);
+
+    /// <summary>
+    /// Downloads the raw bytes and content type of a blob identified by its full URL.
+    /// The blob must reside in one of the containers this service manages.
+    /// </summary>
+    Task<BlobDownload> DownloadDocumentAsync(string blobUrl, CancellationToken ct = default);
+
+    /// <summary>Uploads raw bytes to the redacted container and returns the blob URL.</summary>
+    Task<string> UploadToRedactedAsync(
+        BinaryData content, string blobName, string contentType, CancellationToken ct = default);
+
+    /// <summary>
+    /// Opens the original uploaded document for the given job id (streamed for download).
+    /// Returns <c>null</c> if no matching blob exists.
+    /// </summary>
+    Task<BlobStream?> OpenOriginalDocumentAsync(string jobId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Opens the redacted document for the given job id (streamed for download).
+    /// Returns <c>null</c> if no matching blob exists.
+    /// </summary>
+    Task<BlobStream?> OpenRedactedDocumentAsync(string jobId, CancellationToken ct = default);
 }
+
+/// <summary>Raw content and content type of a downloaded blob.</summary>
+public record BlobDownload(BinaryData Content, string ContentType);
+
+/// <summary>An open blob stream with its content type and blob name.</summary>
+public record BlobStream(Stream Content, string ContentType, string BlobName);

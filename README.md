@@ -4,36 +4,34 @@ A **React + .NET 10** web application that uses **Microsoft Azure AI Foundry** s
 
 ## Architecture
 
+```mermaid
+flowchart LR
+    User([User]) --> FE[React Frontend]
+    FE -->|POST /api/document/redact| API[ASP.NET Core API]
+
+    API -->|1 . store original| Blob[(Blob Storage)]
+    API -->|2 . submit job via SAS URLs| Lang[Azure AI Language<br/>native-document PII]
+    Lang -->|reads original / writes redacted| Blob
+    API -->|3 . read results| Blob
+    API -->|4 . response + streamed docs| FE
+
+    Auth[Entra ID] -.->|bearer tokens| API
+
+    classDef az fill:#e6f0ff,stroke:#0078d4,color:#000
+    class Lang,Auth az
 ```
-┌──────────────────────────────────────────────────────────────┐
-│  React Frontend (Vite + TypeScript)                          │
-│  ─ Drag-and-drop document upload                             │
-│  ─ Processing status + animated spinner                      │
-│  ─ Side-by-side original / redacted text view                │
-│  ─ Redacted entity summary table                             │
-│  ─ One-click download of de-identified document              │
-└────────────────────────┬─────────────────────────────────────┘
-                         │ POST /api/document/redact
-                         ▼
-┌──────────────────────────────────────────────────────────────┐
-│  ASP.NET Core 10 Web API                                     │
-│                                                              │
-│  DocumentController                                          │
-│    └─ DocumentRedactionOrchestrator                         │
-│         ├─ BlobStorageService    → Azure Blob Storage        │
-│         └─ DocumentPiiRedaction  → Azure AI Language         │
-│              Service               (native-document PII)     │
-└──────────────────────────────────────────────────────────────┘
-```
+
+- Auth to **both** Blob Storage and Azure AI Language uses **Entra ID** (`DefaultAzureCredential`) — no account keys or subscription keys.
+- The Language model never receives the file directly: it gets **SAS URLs** and reads the original / writes the redacted document **through Blob Storage**.
 
 ### Redaction pipeline
 
 | Step | Service | What happens |
 |------|---------|-------------|
 | 1 | Azure Blob Storage | Original document stored in `original/<jobId>.<ext>` (private) |
-| 2 | Azure AI Language – native-document PII | Document submitted via SAS URL; Language service extracts text, detects and redacts all PII entities using the character-mask policy, writes `<jobId>.result.json` + redacted binary to the target container |
-| 3 | Azure Blob Storage | Redacted plain-text stored in `redacted/<jobId>.txt` |
-| 4 | API response | Original text (reconstructed from entity offsets), redacted text, entity list, and blob URLs returned to the client |
+| 2 | Azure AI Language – native-document PII | App submits source + target **SAS URLs**; the service reads the original, detects and character-masks all PII, and writes the redacted document + `<name>.result.json` to the target container |
+| 3 | Azure Blob Storage | App reads the entity metadata from `result.json` and copies the redacted document to `redacted/<jobId>.<ext>` |
+| 4 | API response | Returns `jobId`, content type, and the detected entity list; the UI then streams the original and redacted documents back by job id for the side-by-side view |
 
 ### Documents supported
 

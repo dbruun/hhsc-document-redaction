@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { RedactionResponse, RedactedEntity } from '../types';
+import DocumentViewer from './DocumentViewer';
 import styles from './RedactionResult.module.css';
 
 interface RedactionResultProps {
@@ -47,15 +48,21 @@ function formatBytes(bytes: number): string {
 }
 
 export default function RedactionResult({ result, onReset }: RedactionResultProps) {
-  const [activeTab, setActiveTab] = useState<'redacted' | 'original'>('redacted');
+  const [activeTab, setActiveTab] = useState<'documents' | 'entities'>('documents');
 
-  const handleDownload = () => {
-    const blob = new Blob([result.redactedText], { type: 'text/plain' });
+  const originalUrl = `/api/document/${result.jobId}/original`;
+  const redactedUrl = `/api/document/${result.jobId}/redacted`;
+
+  const handleDownload = async () => {
+    const res = await fetch(redactedUrl);
+    const blob = await res.blob();
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    const baseName = result.fileName.replace(/\.[^.]+$/, '');
-    a.download = `${baseName}_redacted.txt`;
+    const dot = result.fileName.lastIndexOf('.');
+    const baseName = dot > 0 ? result.fileName.slice(0, dot) : result.fileName;
+    const ext = dot > 0 ? result.fileName.slice(dot) : '';
+    a.download = `${baseName}_redacted${ext}`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -79,7 +86,7 @@ export default function RedactionResult({ result, onReset }: RedactionResultProp
         </div>
         <div className={styles.headerActions}>
           <button onClick={handleDownload} className={styles.downloadBtn}>
-            ⬇ Download Redacted Text
+            ⬇ Download Redacted Document
           </button>
           <button onClick={onReset} className={styles.resetBtn}>
             Upload Another
@@ -115,30 +122,36 @@ export default function RedactionResult({ result, onReset }: RedactionResultProp
       {/* Tabs */}
       <div className={styles.tabs}>
         <button
-          className={`${styles.tab} ${activeTab === 'redacted' ? styles.activeTab : ''}`}
-          onClick={() => setActiveTab('redacted')}
+          className={`${styles.tab} ${activeTab === 'documents' ? styles.activeTab : ''}`}
+          onClick={() => setActiveTab('documents')}
         >
-          Redacted Text
+          Documents
         </button>
         <button
-          className={`${styles.tab} ${activeTab === 'original' ? styles.activeTab : ''}`}
-          onClick={() => setActiveTab('original')}
+          className={`${styles.tab} ${activeTab === 'entities' ? styles.activeTab : ''}`}
+          onClick={() => setActiveTab('entities')}
         >
-          Original Extracted Text
+          Redacted Entities ({result.redactedEntities.length})
         </button>
       </div>
 
-      {/* Text content */}
-      <div className={styles.textPane}>
-        <pre className={styles.textContent}>
-          {activeTab === 'redacted' ? result.redactedText : result.extractedText}
-        </pre>
-      </div>
+      {/* Side-by-side documents */}
+      {activeTab === 'documents' && (
+        <div className={styles.compareGrid}>
+          <div className={styles.docColumn}>
+            <div className={styles.docHeader}>Original</div>
+            <DocumentViewer url={originalUrl} contentType={result.contentType} />
+          </div>
+          <div className={styles.docColumn}>
+            <div className={`${styles.docHeader} ${styles.docHeaderRedacted}`}>Redacted</div>
+            <DocumentViewer url={redactedUrl} contentType={result.contentType} />
+          </div>
+        </div>
+      )}
 
       {/* Entity detail table */}
-      {result.redactedEntities.length > 0 && (
-        <details className={styles.entityDetails}>
-          <summary className={styles.entitySummary}>View all redacted entities ({result.redactedEntities.length})</summary>
+      {activeTab === 'entities' && (
+        result.redactedEntities.length > 0 ? (
           <div className={styles.tableWrapper}>
             <table className={styles.entityTable}>
               <thead>
@@ -166,7 +179,9 @@ export default function RedactionResult({ result, onReset }: RedactionResultProp
               </tbody>
             </table>
           </div>
-        </details>
+        ) : (
+          <div className={styles.noPii}>No entities to display.</div>
+        )
       )}
     </div>
   );

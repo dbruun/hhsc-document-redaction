@@ -10,6 +10,7 @@ public record RedactionResponse
     public required string JobId { get; init; }
     public required string OriginalBlobUrl { get; init; }
     public required string RedactedBlobUrl { get; init; }
+    public required string ContentType { get; init; }
     public required string ExtractedText { get; init; }
     public required string RedactedText { get; init; }
     public required IReadOnlyList<RedactedEntity> RedactedEntities { get; init; }

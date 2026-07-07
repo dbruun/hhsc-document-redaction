@@ -11,6 +11,7 @@ export interface RedactionResponse {
   jobId: string;
   originalBlobUrl: string;
   redactedBlobUrl: string;
+  contentType: string;
   extractedText: string;
   redactedText: string;
   redactedEntities: RedactedEntity[];

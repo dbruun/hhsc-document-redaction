@@ -59,9 +59,12 @@ public sealed class DocumentRedactionOrchestrator : IDocumentRedactionOrchestrat
         // --- Step 2: Redact PII via Azure AI Language native-document endpoint ---
         var piiResult = await _piiRedactor.RedactDocumentAsync(originalBlobName, ct);
 
-        // --- Step 3: Store the redaction summary text ---
-        var redactedBlobName = $"redacted/{jobId}.txt";
-        var redactedBlobUrl = await _blobStorage.UploadTextAsync(piiResult.RedactedText, redactedBlobName, ct);
+        // --- Step 3: Copy the Azure-generated redacted document to a deterministic
+        //             name so it can be streamed back to the client by job id. ---
+        var redactedDocument = await _blobStorage.DownloadDocumentAsync(piiResult.RedactedDocumentUrl, ct);
+        var redactedBlobName = $"redacted/{jobId}{extension}";
+        var redactedBlobUrl = await _blobStorage.UploadToRedactedAsync(
+            redactedDocument.Content, redactedBlobName, redactedDocument.ContentType, ct);
 
         _logger.LogInformation(
             "Job {JobId} complete. {EntityCount} PII entity/entities redacted.",
@@ -72,6 +75,7 @@ public sealed class DocumentRedactionOrchestrator : IDocumentRedactionOrchestrat
             JobId = jobId,
             OriginalBlobUrl = originalBlobUrl,
             RedactedBlobUrl = redactedBlobUrl,
+            ContentType = file.ContentType,
             ExtractedText = piiResult.ExtractedText,
             RedactedText = piiResult.RedactedText,
             RedactedEntities = piiResult.Entities,
@@ -82,6 +86,12 @@ public sealed class DocumentRedactionOrchestrator : IDocumentRedactionOrchestrat
     }
 
     // ─── Private helpers ────────────────────────────────────────────────────────
+
+    public Task<BlobStream?> OpenOriginalAsync(string jobId, CancellationToken ct = default) =>
+        _blobStorage.OpenOriginalDocumentAsync(jobId, ct);
+
+    public Task<BlobStream?> OpenRedactedAsync(string jobId, CancellationToken ct = default) =>
+        _blobStorage.OpenRedactedDocumentAsync(jobId, ct);
 
     private static void ValidateFile(IFormFile file)
     {
