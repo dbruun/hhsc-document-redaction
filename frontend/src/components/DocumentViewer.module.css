@@ -1,0 +1,62 @@
+.status,
+.error {
+  padding: 2rem 1rem;
+  text-align: center;
+  color: #6b7280;
+  font-size: 0.9rem;
+}
+
+.error {
+  color: #b91c1c;
+}
+
+.pdfFrame {
+  width: 100%;
+  height: 70vh;
+  border: none;
+  background: #fff;
+}
+
+.docHtml {
+  height: 70vh;
+  overflow: auto;
+  padding: 2rem 2.25rem;
+  background: #fff;
+  color: #111827;
+  line-height: 1.6;
+  font-family: 'Calibri', 'Segoe UI', system-ui, sans-serif;
+}
+
+.docHtml :is(h1, h2, h3) {
+  margin: 1rem 0 0.5rem;
+  font-weight: 600;
+}
+
+.docHtml p {
+  margin: 0 0 0.75rem;
+}
+
+.docHtml table {
+  border-collapse: collapse;
+  margin: 0.75rem 0;
+}
+
+.docHtml td,
+.docHtml th {
+  border: 1px solid #d1d5db;
+  padding: 0.35rem 0.6rem;
+}
+
+.docText {
+  height: 70vh;
+  overflow: auto;
+  margin: 0;
+  padding: 1.5rem;
+  background: #fff;
+  color: #111827;
+  font-family: ui-monospace, 'Cascadia Code', 'Consolas', monospace;
+  font-size: 0.85rem;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
