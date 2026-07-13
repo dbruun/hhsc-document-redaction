@@ -126,6 +126,46 @@
   background: #006cbd;
 }
 
+.successBox {
+  padding: 32px 28px;
+  text-align: center;
+}
+
+.successTitle {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #15803d;
+  margin: 0 0 8px;
+}
+
+.successMessage {
+  font-size: 0.9rem;
+  color: #374151;
+  margin: 0 0 20px;
+}
+
+.successActions {
+  display: flex;
+  gap: 0.6rem;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.downloadBtn {
+  padding: 8px 20px;
+  background: #b91c1c;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.downloadBtn:hover {
+  background: #991b1b;
+}
+
 .notice {
   font-size: 0.75rem;
   color: #9ca3af;

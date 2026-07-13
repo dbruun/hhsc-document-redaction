@@ -1,14 +1,44 @@
 import { useState } from 'react';
 import type { UploadStatus } from './types';
+import { applyRedactions } from './services/api';
 import DocumentUpload from './components/DocumentUpload';
 import LoadingSpinner from './components/LoadingSpinner';
-import RedactionResult from './components/RedactionResult';
+import RedactionReview from './components/RedactionReview';
 import styles from './App.module.css';
 
 export default function App() {
   const [status, setStatus] = useState<UploadStatus>({ kind: 'idle' });
 
   const handleReset = () => setStatus({ kind: 'idle' });
+
+  const handleApply = async (selectedIds: string[]) => {
+    if (status.kind !== 'reviewing') return;
+    const detection = status.detection;
+    setStatus({ kind: 'applying', detection });
+    try {
+      const result = await applyRedactions(detection.jobId, selectedIds);
+      setStatus({ kind: 'success', result, detection });
+    } catch (err) {
+      setStatus({
+        kind: 'error',
+        message: err instanceof Error ? err.message : 'An unexpected error occurred.',
+      });
+    }
+  };
+
+  const handleDownload = async (jobId: string, fileName: string) => {
+    const res = await fetch(`/api/document/${jobId}/redacted`);
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    const dot = fileName.lastIndexOf('.');
+    const baseName = dot > 0 ? fileName.slice(0, dot) : fileName;
+    const ext = dot > 0 ? fileName.slice(dot) : '';
+    a.download = `${baseName}_redacted${ext}`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   return (
     <div className={styles.page}>
@@ -40,11 +70,10 @@ export default function App() {
           <div className={styles.intro}>
             <h1 className={styles.title}>Maternal Mortality Review — Document De-identification</h1>
             <p className={styles.description}>
-              Upload a clinical record, lab report, or any MMRS document. The system will
-              automatically extract the text and strip all personally identifiable information (PII)
-              including patient names, provider names, facility identifiers, dates, addresses, and
-              contact details — returning a fully de-identified version suitable for committee
-              review.
+              Upload a clinical record, lab report, or any MMRS document. The system detects all
+              personally identifiable information (PII) and shows it highlighted so you can review
+              and choose exactly what to remove — then redacts only your selections, keeping the
+              original file format.
             </p>
           </div>
 
@@ -56,7 +85,39 @@ export default function App() {
           )}
 
           {status.kind === 'processing' && (
-            <LoadingSpinner message="Analyzing and redacting document — this may take a moment…" />
+            <LoadingSpinner message="Analyzing document and detecting PII — this may take a moment…" />
+          )}
+
+          {(status.kind === 'reviewing' || status.kind === 'applying') && (
+            <RedactionReview
+              detection={status.detection}
+              busy={status.kind === 'applying'}
+              onApply={handleApply}
+              onCancel={handleReset}
+            />
+          )}
+
+          {status.kind === 'success' && (
+            <div className={styles.successBox}>
+              <p className={styles.successTitle}>✅ Redaction complete</p>
+              <p className={styles.successMessage}>
+                <strong>{status.result.redactedCount}</strong> item
+                {status.result.redactedCount !== 1 ? 's' : ''} redacted in{' '}
+                <strong>{status.result.fileName}</strong>. The de-identified document keeps its
+                original format.
+              </p>
+              <div className={styles.successActions}>
+                <button
+                  className={styles.downloadBtn}
+                  onClick={() => handleDownload(status.result.jobId, status.result.fileName)}
+                >
+                  ⬇ Download redacted document
+                </button>
+                <button onClick={handleReset} className={styles.retryBtn}>
+                  Redact another
+                </button>
+              </div>
+            </div>
           )}
 
           {status.kind === 'error' && (
@@ -67,10 +128,6 @@ export default function App() {
                 Try Again
               </button>
             </div>
-          )}
-
-          {status.kind === 'success' && (
-            <RedactionResult result={status.result} onReset={handleReset} />
           )}
         </div>
 

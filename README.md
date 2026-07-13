@@ -1,45 +1,49 @@
 # HHSC / MMRS Document Redaction System
 
-A **React + .NET 10** web application that uses **Microsoft Azure AI Foundry** services to automatically de-identify (redact) sensitive clinical documents before they are reviewed by the Maternal Mortality Review System (MMRS) committee.
+A **React + .NET 10** web application that uses **Microsoft Azure AI Foundry** services to help reviewers de-identify sensitive clinical documents before they reach the Maternal Mortality Review System (MMRS) committee. The reviewer sees every detected PII instance highlighted, chooses exactly which ones to remove, and the app redacts **only those** — keeping the original file format.
 
 ## Architecture
 
 ```mermaid
 flowchart LR
     User([User]) --> FE[React Frontend]
-    FE -->|POST /api/document/redact| API[ASP.NET Core API]
-
-    API -->|1 . store original| Blob[(Blob Storage)]
-    API -->|2 . submit job via SAS URLs| Lang[Azure AI Language<br/>native-document PII]
-    Lang -->|reads original / writes redacted| Blob
-    API -->|3 . read results| Blob
-    API -->|4 . response + streamed docs| FE
+    FE -->|1 . POST /api/document/detect| API[ASP.NET Core API]
+    API -->|extract text| Ext{Format}
+    Ext -->|PDF| DI[Azure AI Document Intelligence<br/>prebuilt-read + word boxes]
+    Ext -->|TXT / DOCX| Local[In-process text extract]
+    API -->|detect PII w/ offsets| Lang[Azure AI Language<br/>text PII]
+    API -->|store original + detection.json| Blob[(Blob Storage)]
+    FE -->|2 . review & select instances| FE
+    FE -->|3 . POST /api/document/id/apply| API
+    API -->|redact selected only| Burn{Format}
+    Burn -->|TXT string · DOCX OpenXML · PDF raster burn| Blob
 
     Auth[Entra ID] -.->|bearer tokens| API
 
     classDef az fill:#e6f0ff,stroke:#0078d4,color:#000
-    class Lang,Auth az
+    class Lang,DI,Auth az
 ```
 
-- Auth to **both** Blob Storage and Azure AI Language uses **Entra ID** (`DefaultAzureCredential`) — no account keys or subscription keys.
-- The Language model never receives the file directly: it gets **SAS URLs** and reads the original / writes the redacted document **through Blob Storage**.
+- Auth to Blob Storage, Azure AI Language, and Azure AI Document Intelligence uses **Entra ID** (`DefaultAzureCredential`) — no account keys or subscription keys.
+- Detection is uniform: **Azure AI Language text PII** runs over the extracted text and returns each instance with a character offset, which powers the highlight preview and per-instance selection.
+- Only PDFs call **Document Intelligence** (for per-word page coordinates used to burn boxes).
 
-### Redaction pipeline
+### Redaction pipeline (two phases)
 
-| Step | Service | What happens |
-|------|---------|-------------|
-| 1 | Azure Blob Storage | Original document stored in `original/<jobId>.<ext>` (private) |
-| 2 | Azure AI Language – native-document PII | App submits source + target **SAS URLs**; the service reads the original, detects and character-masks all PII, and writes the redacted document + `<name>.result.json` to the target container |
-| 3 | Azure Blob Storage | App reads the entity metadata from `result.json` and copies the redacted document to `redacted/<jobId>.<ext>` |
-| 4 | API response | Returns `jobId`, content type, and the detected entity list; the UI then streams the original and redacted documents back by job id for the side-by-side view |
+| Phase | Step | What happens |
+|-------|------|-------------|
+| Detect | 1 | Original stored in `original/<jobId>.<ext>`; text extracted (TXT decode · DOCX OpenXML · PDF Document Intelligence) |
+| Detect | 2 | Azure AI Language **text PII** detects every instance with offsets; PDF instances also get page boxes. Result saved to `state/<jobId>.json` and returned |
+| Review | 3 | The UI highlights all instances (pre-selected). The reviewer unchecks anything to keep — e.g. keep the patient, redact the nurse and doctor |
+| Apply | 4 | Only the selected instances are redacted **in the original format**: TXT string mask, DOCX run edit (OpenXML), PDF rasterize + opaque bars. Output stored in `redacted/<jobId>.<ext>` |
 
 ### Documents supported
 
 `PDF · DOCX · TXT` — up to **50 MB**.
 
-> The Azure AI Language native-document endpoint currently supports **PDF, DOCX, and TXT** only.
-> Image-based document scanning (JPEG, PNG, TIFF, BMP) and HTML are not supported by the
-> native-document PII feature.
+> Redacted PDFs are rasterized so the masked text is genuinely removed (not just covered).
+> A side effect is that the redacted PDF's text is no longer selectable — the intended
+> behavior for a released, de-identified document.
 
 ---
 
@@ -55,24 +59,28 @@ flowchart LR
 
 ## Azure Resource Setup
 
-### 1. Azure AI Language (via Azure AI Foundry Gateway)
+### 1. Azure AI Language
 
-The service is accessed through the pre-configured Azure AI Foundry API gateway:
+1. Create (or reuse) an **Azure AI Language** resource.
+2. Copy its endpoint, e.g. `https://<resource>.cognitiveservices.azure.com`, into `Azure:Language:Endpoint`.
+3. Grant the app identity the **Cognitive Services User** role on the resource (Entra ID auth; no key needed).
 
-```
-https://derekgatewaytest.azure-api.net/multimodalsearch-resource
-```
+### 2. Azure AI Document Intelligence (required for PDF)
 
-You only need the **API key** — the endpoint is already set as the default in `appsettings.json`. Set it via User Secrets or the `AZURE_LANGUAGE_KEY` environment variable (see *Configuration* below).
+1. Create an **Azure AI Document Intelligence** (Form Recognizer) resource.
+2. Copy its endpoint into `Azure:DocumentIntelligence:Endpoint`.
+3. Grant the app identity the **Cognitive Services User** role on the resource.
 
-### 2. Azure Blob Storage
+> Only PDF redaction uses Document Intelligence (for word coordinates). TXT and DOCX are
+> handled fully in-process and don't require it.
+
+### 3. Azure Blob Storage
 
 1. Create a **Storage Account**.
 2. Copy the **Blob service URI** from the storage account overview, for example `https://<account>.blob.core.windows.net`.
 3. Optionally create the containers `documents-unredacted` and `documents-redacted` (the app creates them automatically if absent).
-4. Grant the app identity the **Storage Blob Data Contributor** role on the storage account so it can upload and read blobs.
-5. Grant the same identity the **Storage Blob Delegator** role if it needs to mint user-delegation SAS tokens for the Language service.
-6. For local development, the signed-in user should have those same roles on the storage account.
+4. Grant the app identity the **Storage Blob Data Contributor** role on the storage account.
+5. For local development, the signed-in user should have that same role on the storage account.
 
 ---
 
@@ -83,17 +91,19 @@ You only need the **API key** — the endpoint is already set as the default in 
 ```bash
 cd backend/DocumentRedaction.API
 
-dotnet user-secrets set "Azure:Language:Key"             "<key>"
-dotnet user-secrets set "Azure:Storage:ServiceUri"       "https://<account>.blob.core.windows.net"
+dotnet user-secrets set "Azure:Language:Endpoint"              "https://<language>.cognitiveservices.azure.com"
+dotnet user-secrets set "Azure:DocumentIntelligence:Endpoint"  "https://<doc-intel>.cognitiveservices.azure.com"
+dotnet user-secrets set "Azure:Storage:ServiceUri"             "https://<account>.blob.core.windows.net"
 ```
 
-Make sure you are signed in with an Azure identity that has access to the storage account, for example via `az login`, Visual Studio, or VS Code.
+Make sure you are signed in with an Azure identity that has access to the resources, for example via `az login`, Visual Studio, or VS Code.
 If you want to pin the login to the tenant used for this app, sign in with tenant `d64bea8b-d6b8-4662-b544-534df0893609`.
 
 ### Option B — Environment variables
 
 ```
-Azure__Language__Key=...
+Azure__Language__Endpoint=https://<language>.cognitiveservices.azure.com
+Azure__DocumentIntelligence__Endpoint=https://<doc-intel>.cognitiveservices.azure.com
 Azure__Storage__ServiceUri=https://<account>.blob.core.windows.net
 Azure__Storage__UnredactedContainerName=documents-unredacted
 Azure__Storage__RedactedContainerName=documents-redacted
@@ -151,13 +161,17 @@ hhsc-document-redaction/
 ├── backend/
 │   └── DocumentRedaction.API/
 │       ├── Controllers/
-│       │   └── DocumentController.cs              # POST /api/document/redact
+│       │   └── DocumentController.cs              # detect / apply / stream endpoints
 │       ├── Models/
-│       │   └── RedactionModels.cs                 # Request / Response records
+│       │   └── RedactionModels.cs                 # Detection / Apply records
 │       ├── Services/
-│       │   ├── BlobStorageService.cs              # Azure Blob Storage + SAS helpers
-│       │   ├── DocumentPiiRedactionService.cs     # Azure AI Language native-document PII
-│       │   ├── DocumentRedactionOrchestrator.cs   # Pipeline orchestrator
+│       │   ├── BlobStorageService.cs              # Blob storage + job state
+│       │   ├── TextPiiClient.cs                   # Azure AI Language text PII
+│       │   ├── DocumentLayoutService.cs           # Azure AI Document Intelligence (PDF)
+│       │   ├── TxtDocumentProcessor.cs            # TXT extract + string-mask redact
+│       │   ├── DocxDocumentProcessor.cs           # DOCX extract + OpenXML redact
+│       │   ├── PdfDocumentProcessor.cs            # PDF extract + raster-burn redact
+│       │   ├── DocumentRedactionOrchestrator.cs   # Detect/apply orchestrator
 │       │   └── I*.cs                              # Service interfaces
 │       ├── Program.cs
 │       ├── appsettings.json
@@ -167,9 +181,9 @@ hhsc-document-redaction/
 │   │   ├── components/
 │   │   │   ├── DocumentUpload.tsx                 # Drag-and-drop upload zone
 │   │   │   ├── LoadingSpinner.tsx                 # Processing indicator
-│   │   │   └── RedactionResult.tsx                # Results view + entity table
+│   │   │   └── RedactionReview.tsx                # Highlight preview + instance checklist
 │   │   ├── services/
-│   │   │   └── api.ts                             # fetch wrapper
+│   │   │   └── api.ts                             # detect / apply fetch wrappers
 │   │   ├── types/
 │   │   │   └── index.ts                           # TypeScript interfaces
 │   │   └── App.tsx
@@ -185,38 +199,64 @@ hhsc-document-redaction/
 
 ## API reference
 
-### `POST /api/document/redact`
+### `POST /api/document/detect`
 
-Accepts a `multipart/form-data` request with a single `file` field.
+Accepts a `multipart/form-data` request with a single `file` field. Detects PII and returns
+every instance for review — nothing is redacted yet.
 
 **Response `200 OK`**
 
 ```json
 {
   "jobId": "a1b2c3...",
-  "originalBlobUrl": "https://storage.../original/a1b2c3.pdf",
-  "redactedBlobUrl": "https://storage.../redacted/a1b2c3.txt",
+  "fileName": "admission-record.pdf",
+  "fileSizeBytes": 245120,
+  "contentType": "application/pdf",
   "extractedText": "Patient Jane Doe was admitted on 01/15/2024...",
-  "redactedText": "Patient ******** was admitted on **********...",
-  "redactedEntities": [
+  "pageCount": 1,
+  "pages": [{ "page": 1, "width": 8.5, "height": 11 }],
+  "entities": [
     {
+      "id": "e0",
       "text": "Jane Doe",
       "category": "Person",
       "subCategory": null,
       "confidenceScore": 0.99,
       "offset": 8,
-      "length": 8
+      "length": 8,
+      "boxes": [{ "page": 1, "x": 0.12, "y": 0.08, "width": 0.14, "height": 0.02 }]
     }
   ],
-  "fileName": "admission-record.pdf",
-  "fileSizeBytes": 245120,
   "processedAt": "2024-01-15T14:32:00Z"
 }
 ```
 
-**Response `400 Bad Request`** — unsupported file type or file too large.
+### `POST /api/document/{jobId}/apply`
 
-**Response `500 Internal Server Error`** — Azure service error.
+Redacts only the selected instances, preserving the original format.
+
+```json
+// request body
+{ "selectedEntityIds": ["e0", "e2"] }
+```
+
+**Response `200 OK`**
+
+```json
+{
+  "jobId": "a1b2c3...",
+  "redactedUrl": "https://storage.../redacted/a1b2c3.pdf",
+  "redactedCount": 2,
+  "fileName": "admission-record.pdf",
+  "processedAt": "2024-01-15T14:33:10Z"
+}
+```
+
+### `GET /api/document/{jobId}/original` · `GET /api/document/{jobId}/redacted`
+
+Stream the original upload and the redacted output for a job.
+
+**Errors** — `400 Bad Request` (unsupported type / unknown job) · `500 Internal Server Error` (Azure service error).
 
 ---
 

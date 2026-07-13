@@ -201,6 +201,41 @@ public sealed class BlobStorageService : IBlobStorageService
     public Task<BlobStream?> OpenRedactedDocumentAsync(string jobId, CancellationToken ct = default) =>
         OpenByPrefixAsync(_redactedContainer, $"redacted/{jobId}", ct);
 
+    public async Task UploadStateAsync(string jobId, string json, CancellationToken ct = default)
+    {
+        var blob = _unredactedContainer.GetBlobClient($"state/{jobId}.json");
+        var options = new BlobUploadOptions
+        {
+            HttpHeaders = new BlobHttpHeaders { ContentType = "application/json" }
+        };
+        using var stream = new MemoryStream(Encoding.UTF8.GetBytes(json));
+        await blob.UploadAsync(stream, options, ct);
+    }
+
+    public async Task<string?> DownloadStateAsync(string jobId, CancellationToken ct = default)
+    {
+        var blob = _unredactedContainer.GetBlobClient($"state/{jobId}.json");
+        if (!await blob.ExistsAsync(ct))
+            return null;
+
+        var response = await blob.DownloadContentAsync(ct);
+        return response.Value.Content.ToString();
+    }
+
+    public async Task<BlobDownload?> DownloadOriginalAsync(string jobId, CancellationToken ct = default)
+    {
+        await foreach (var item in _unredactedContainer.GetBlobsAsync(
+            traits: BlobTraits.None, states: BlobStates.None, prefix: $"original/{jobId}", cancellationToken: ct))
+        {
+            var blobClient = _unredactedContainer.GetBlobClient(item.Name);
+            var response = await blobClient.DownloadContentAsync(ct);
+            var contentType = response.Value.Details.ContentType ?? "application/octet-stream";
+            return new BlobDownload(response.Value.Content, contentType);
+        }
+
+        return null;
+    }
+
     private async Task<BlobStream?> OpenByPrefixAsync(
         BlobContainerClient container, string prefix, CancellationToken ct)
     {

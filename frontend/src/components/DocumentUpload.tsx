@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState } from 'react';
 import type { UploadStatus } from '../types';
-import { redactDocument } from '../services/api';
+import { detectDocument } from '../services/api';
 import styles from './DocumentUpload.module.css';
 
 const ACCEPTED_TYPES = [
@@ -40,8 +40,8 @@ export default function DocumentUpload({ onStatusChange }: DocumentUploadProps) 
       onStatusChange({ kind: 'processing' });
 
       try {
-        const result = await redactDocument(file);
-        onStatusChange({ kind: 'success', result });
+        const detection = await detectDocument(file);
+        onStatusChange({ kind: 'reviewing', detection });
       } catch (err) {
         onStatusChange({
           kind: 'error',

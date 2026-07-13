@@ -9,8 +9,9 @@ services:
       - '5000:8080'
     environment:
       - ASPNETCORE_ENVIRONMENT=Production
-      - Azure__Language__Endpoint=${AZURE_LANGUAGE_ENDPOINT:-https://derekgatewaytest.azure-api.net/multimodalsearch-resource}
-      - Azure__Language__Key=${AZURE_LANGUAGE_KEY}
+      - Azure__TenantId=${AZURE_TENANT_ID}
+      - Azure__Language__Endpoint=${AZURE_LANGUAGE_ENDPOINT}
+      - Azure__DocumentIntelligence__Endpoint=${AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT}
       - Azure__Storage__ServiceUri=${AZURE_STORAGE_SERVICE_URI}
       - Azure__Storage__UnredactedContainerName=${AZURE_STORAGE_UNREDACTED_CONTAINER_NAME:-documents-unredacted}
       - Azure__Storage__RedactedContainerName=${AZURE_STORAGE_REDACTED_CONTAINER_NAME:-documents-redacted}

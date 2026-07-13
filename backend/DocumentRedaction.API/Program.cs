@@ -8,8 +8,9 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 
-// HttpClient factory used by DocumentPiiRedactionService
-builder.Services.AddHttpClient(nameof(DocumentPiiRedactionService));
+// HttpClient factory used by the Azure Language and Document Intelligence REST clients
+builder.Services.AddHttpClient(nameof(TextPiiClient));
+builder.Services.AddHttpClient(nameof(DocumentLayoutService));
 
 // ---------- Authentication ----------
 // The app authenticates to BOTH Azure Blob Storage and Azure AI Language using a
@@ -32,7 +33,14 @@ builder.Services.AddSingleton(credential);
 
 // Register Azure AI Foundry services
 builder.Services.AddSingleton<IBlobStorageService, BlobStorageService>();
-builder.Services.AddSingleton<IDocumentPiiRedactionService, DocumentPiiRedactionService>();
+builder.Services.AddSingleton<ITextPiiClient, TextPiiClient>();
+builder.Services.AddSingleton<IDocumentLayoutService, DocumentLayoutService>();
+
+// Per-format document processors (resolved as IEnumerable by the orchestrator)
+builder.Services.AddSingleton<IDocumentFormatProcessor, TxtDocumentProcessor>();
+builder.Services.AddSingleton<IDocumentFormatProcessor, DocxDocumentProcessor>();
+builder.Services.AddSingleton<IDocumentFormatProcessor, PdfDocumentProcessor>();
+
 builder.Services.AddScoped<IDocumentRedactionOrchestrator, DocumentRedactionOrchestrator>();
 
 // CORS – allow the React dev server and any configured production origin
