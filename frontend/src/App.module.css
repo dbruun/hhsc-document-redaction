@@ -1,0 +1,184 @@
+.page {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: #f1f5f9;
+}
+
+.header {
+  background: #1a1a2e;
+  color: #fff;
+  padding: 0 24px;
+}
+
+.headerInner {
+  max-width: 900px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 0;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 1.1rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.logoIcon {
+  font-size: 1.4rem;
+}
+
+.tagline {
+  font-size: 0.8rem;
+  color: #94a3b8;
+  margin: 0;
+}
+
+.link {
+  color: #60a5fa;
+  text-decoration: none;
+}
+
+.link:hover {
+  text-decoration: underline;
+}
+
+.main {
+  flex: 1;
+  max-width: 1280px;
+  width: 100%;
+  margin: 32px auto;
+  padding: 0 16px;
+}
+
+.card {
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+  overflow: hidden;
+}
+
+.intro {
+  padding: 28px 28px 20px;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.title {
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: #1a1a2e;
+  margin: 0 0 10px;
+}
+
+.description {
+  font-size: 0.9rem;
+  color: #4b5563;
+  line-height: 1.6;
+  margin: 0;
+}
+
+/* DocumentUpload sits in the card so give it padding */
+:global(.card) > :global(.DocumentUpload) {
+  padding: 24px 28px;
+}
+
+/* Wrap the upload component in its own padded container */
+.uploadWrapper {
+  padding: 24px 28px;
+}
+
+.errorBox {
+  padding: 32px 28px;
+  text-align: center;
+}
+
+.errorTitle {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #dc2626;
+  margin: 0 0 8px;
+}
+
+.errorMessage {
+  font-size: 0.875rem;
+  color: #6b7280;
+  margin: 0 0 20px;
+}
+
+.retryBtn {
+  padding: 8px 20px;
+  background: #0078d4;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.875rem;
+}
+
+.retryBtn:hover {
+  background: #006cbd;
+}
+
+.successBox {
+  padding: 32px 28px;
+  text-align: center;
+}
+
+.successTitle {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #15803d;
+  margin: 0 0 8px;
+}
+
+.successMessage {
+  font-size: 0.9rem;
+  color: #374151;
+  margin: 0 0 20px;
+}
+
+.successActions {
+  display: flex;
+  gap: 0.6rem;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.downloadBtn {
+  padding: 8px 20px;
+  background: #b91c1c;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.downloadBtn:hover {
+  background: #991b1b;
+}
+
+.notice {
+  font-size: 0.75rem;
+  color: #9ca3af;
+  text-align: center;
+  margin: 16px 0 0;
+  line-height: 1.5;
+}
+
+.footer {
+  background: #1a1a2e;
+  color: #64748b;
+  text-align: center;
+  padding: 16px;
+  font-size: 0.78rem;
+  margin-top: auto;
+}
