@@ -61,6 +61,7 @@ public sealed class DocumentController : ControllerBase
     [ProducesResponseType(typeof(ErrorResponse), StatusCodes.Status500InternalServerError)]
     public async Task<IActionResult> Apply(string jobId, [FromBody] ApplyRequest request, CancellationToken ct)
     {
+        var safeJobId = jobId.Replace('\r', '_').Replace('\n', '_');
         try
         {
             var result = await _orchestrator.ApplyAsync(jobId, request.SelectedEntityIds ?? [], ct);
@@ -68,12 +69,12 @@ public sealed class DocumentController : ControllerBase
         }
         catch (ArgumentException ex)
         {
-            _logger.LogWarning(ex, "Apply validation error for job '{JobId}'", jobId);
+            _logger.LogWarning(ex, "Apply validation error for job '{JobId}'", safeJobId);
             return BadRequest(new ErrorResponse { Error = ex.Message });
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Unexpected error applying redactions for job '{JobId}'", jobId);
+            _logger.LogError(ex, "Unexpected error applying redactions for job '{JobId}'", safeJobId);
             return Problem("An unexpected error occurred while redacting the document.", ex);
         }
     }

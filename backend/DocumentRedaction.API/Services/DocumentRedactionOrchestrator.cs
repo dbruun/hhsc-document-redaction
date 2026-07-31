@@ -112,7 +112,7 @@ public sealed class DocumentRedactionOrchestrator : IDocumentRedactionOrchestrat
 
         _logger.LogInformation(
             "Apply job {JobId}: redacting {Selected} of {Total} instance(s).",
-            jobId, selected.Count, state.Entities.Count);
+            jobId.Replace('\r', '_').Replace('\n', '_'), selected.Count, state.Entities.Count);
 
         var redacted = await processor.RedactAsync(original.Content, selected, ct);
 
