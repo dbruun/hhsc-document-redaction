@@ -67,6 +67,14 @@ builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(o =>
 
 var app = builder.Build();
 
+// Warn at startup when PDF support is unconfigured so a fresh-clone demo doesn't crash on first PDF.
+var docIntelEndpoint = app.Configuration["Azure:DocumentIntelligence:Endpoint"];
+if (string.IsNullOrWhiteSpace(docIntelEndpoint))
+{
+    app.Logger.LogWarning(
+        "Azure:DocumentIntelligence:Endpoint is not set — PDF redaction will be unavailable; TXT and DOCX still work.");
+}
+
 // ---------- Middleware ----------
 app.UseCors();
 

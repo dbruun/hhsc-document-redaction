@@ -36,14 +36,15 @@ public sealed class DocumentLayoutService : IDocumentLayoutService
         _http = httpClientFactory.CreateClient(nameof(DocumentLayoutService));
         _credential = credential;
         _logger = logger;
-        _endpoint = (config["Azure:DocumentIntelligence:Endpoint"]
-            ?? throw new InvalidOperationException(
-                "Azure:DocumentIntelligence:Endpoint is required for PDF redaction."))
-            .TrimEnd('/');
+        _endpoint = (config["Azure:DocumentIntelligence:Endpoint"] ?? string.Empty).TrimEnd('/');
     }
 
     public async Task<ExtractedDocument> AnalyzeAsync(BinaryData pdf, CancellationToken ct = default)
     {
+        if (string.IsNullOrEmpty(_endpoint))
+            throw new ArgumentException(
+                "PDF support requires Azure Document Intelligence to be configured — see README.");
+
         var operationLocation = await SubmitAsync(pdf, ct);
         var analyzeResult = await PollAsync(operationLocation, ct);
         return Map(analyzeResult);
