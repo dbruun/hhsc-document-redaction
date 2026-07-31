@@ -55,6 +55,38 @@ public class DocumentRedactionOrchestratorTests
     }
 
     [Fact]
+    public async Task DetectAsync_emits_one_box_per_line_for_multiline_entity()
+    {
+        // "Jane\nDoe": two words on clearly different lines — should produce two separate boxes,
+        // not a single giant box spanning the gap between the lines.
+        var extracted = new ExtractedDocument(
+            Text: "Jane\nDoe",
+            Pages: new[] { new PageInfo { Page = 1, Width = 8.5, Height = 11 } },
+            Words: new[]
+            {
+                new LayoutWord(0, 4, Box(1, 0.10, 0.10, 0.08, 0.02)), // "Jane" — line 1, Y 0.10..0.12
+                new LayoutWord(5, 3, Box(1, 0.10, 0.20, 0.07, 0.02)), // "Doe"  — line 2, Y 0.20..0.22
+            });
+        var processor = new FakeProcessor("application/pdf", extracted);
+        // Entity spans the full text "Jane\nDoe" (offset 0, length 8)
+        var pii = new FakePiiClient(new PiiEntity("Jane\nDoe", "Person", null, 0.95, 0, 8));
+        var sut = BuildSut(processor, pii, new FakeBlobStorage());
+
+        var result = await sut.DetectAsync(MakeFile("%PDF-1.4", "scan.pdf", "application/pdf"));
+
+        var boxes = result.Entities[0].Boxes;
+        Assert.Equal(2, boxes.Count);
+
+        // Each box should be tight around its line — neither box's height should span the gap.
+        Assert.All(boxes, b => Assert.True(b.Height <= 0.03, $"Box height {b.Height} is unexpectedly large"));
+
+        // Boxes should be on page 1 and ordered by Y.
+        Assert.Equal(1, boxes[0].Page);
+        Assert.Equal(1, boxes[1].Page);
+        Assert.True(boxes[0].Y < boxes[1].Y, "First box should be above the second");
+    }
+
+    [Fact]
     public async Task ApplyAsync_redacts_only_the_selected_instances()
     {
         var pii = new FakePiiClient(
