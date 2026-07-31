@@ -1,0 +1,62 @@
+.pdfContainer {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  overflow-y: auto;
+  max-height: 60vh;
+  padding: 0.75rem;
+  background: #f9fafb;
+}
+
+.pageWrapper {
+  display: flex;
+  justify-content: center;
+}
+
+.canvasContainer {
+  position: relative;
+  line-height: 0; /* prevent extra space under canvas */
+}
+
+.canvas {
+  display: block;
+  max-width: 100%;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.18);
+}
+
+.overlay {
+  position: absolute;
+  border: 2px solid;
+  border-radius: 2px;
+  cursor: pointer;
+  padding: 0;
+  background: transparent;
+  box-sizing: border-box;
+  transition: background-color 0.1s;
+}
+
+.overlay:hover {
+  filter: brightness(0.9);
+}
+
+.overlay:focus {
+  outline: 2px solid #2563eb;
+  outline-offset: 1px;
+}
+
+.status {
+  padding: 2rem;
+  text-align: center;
+  color: #6b7280;
+  font-size: 0.9rem;
+}
+
+.truncationNote {
+  padding: 0.4rem 0.85rem;
+  background: #fef9c3;
+  border: 1px solid #fde047;
+  border-radius: 6px;
+  font-size: 0.82rem;
+  color: #713f12;
+  text-align: center;
+}

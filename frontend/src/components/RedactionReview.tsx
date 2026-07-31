@@ -1,27 +1,8 @@
 import { useMemo, useState } from 'react';
 import type { DetectionResponse, DetectedEntity } from '../types';
 import styles from './RedactionReview.module.css';
-
-const CATEGORY_COLORS: Record<string, string> = {
-  Person: '#dc2626',
-  PersonType: '#ea580c',
-  PhoneNumber: '#d97706',
-  Organization: '#7c3aed',
-  Address: '#0369a1',
-  Email: '#0891b2',
-  URL: '#0891b2',
-  IPAddress: '#0891b2',
-  DateTime: '#15803d',
-  Date: '#15803d',
-  Quantity: '#166534',
-  Age: '#16a34a',
-  USSocialSecurityNumber: '#be123c',
-  Default: '#6b7280',
-};
-
-function categoryColor(category: string): string {
-  return CATEGORY_COLORS[category] ?? CATEGORY_COLORS['Default'];
-}
+import { categoryColor } from './categoryColors';
+import PdfHighlightPreview from './PdfHighlightPreview';
 
 interface Segment {
   text: string;
@@ -137,30 +118,39 @@ export default function RedactionReview({ detection, busy, onApply, onCancel }: 
         {/* Highlighted document preview */}
         <section className={styles.docPane} aria-label="Document preview with highlighted PII">
           <div className={styles.docHeader}>Document preview</div>
-          <pre className={styles.docText}>
-            {segments.map((seg, i) => {
-              if (!seg.entity) return <span key={i}>{seg.text}</span>;
-              const color = categoryColor(seg.entity.category);
-              const isSelected = selected.has(seg.entity.id);
-              return (
-                <mark
-                  key={i}
-                  className={`${styles.mark} ${isSelected ? styles.markOn : styles.markOff}`}
-                  style={{
-                    color,
-                    borderColor: color,
-                    backgroundColor: isSelected ? `${color}22` : 'transparent',
-                  }}
-                  title={`${seg.entity.category}${seg.entity.subCategory ? ' · ' + seg.entity.subCategory : ''} — ${(
-                    seg.entity.confidenceScore * 100
-                  ).toFixed(0)}%`}
-                  onClick={() => toggle(seg.entity!.id)}
-                >
-                  {seg.text}
-                </mark>
-              );
-            })}
-          </pre>
+          {detection.contentType === 'application/pdf' ? (
+            <PdfHighlightPreview
+              detection={detection}
+              selected={selected}
+              onToggle={toggle}
+              categoryColor={categoryColor}
+            />
+          ) : (
+            <pre className={styles.docText}>
+              {segments.map((seg, i) => {
+                if (!seg.entity) return <span key={i}>{seg.text}</span>;
+                const color = categoryColor(seg.entity.category);
+                const isSelected = selected.has(seg.entity.id);
+                return (
+                  <mark
+                    key={i}
+                    className={`${styles.mark} ${isSelected ? styles.markOn : styles.markOff}`}
+                    style={{
+                      color,
+                      borderColor: color,
+                      backgroundColor: isSelected ? `${color}22` : 'transparent',
+                    }}
+                    title={`${seg.entity.category}${seg.entity.subCategory ? ' · ' + seg.entity.subCategory : ''} — ${(
+                      seg.entity.confidenceScore * 100
+                    ).toFixed(0)}%`}
+                    onClick={() => toggle(seg.entity!.id)}
+                  >
+                    {seg.text}
+                  </mark>
+                );
+              })}
+            </pre>
+          )}
         </section>
 
         {/* Grouped instance checklist */}
