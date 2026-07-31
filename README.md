@@ -45,6 +45,13 @@ flowchart LR
 > A side effect is that the redacted PDF's text is no longer selectable — the intended
 > behavior for a released, de-identified document.
 
+> **DOCX redaction covers body text only in this POC; headers, footers, text boxes,
+> comments, and footnotes are not yet scanned.**
+
+> **PDF redaction requires `Azure:DocumentIntelligence:Endpoint` to be set.** Without it
+> the app still starts and TXT/DOCX redaction works; a PDF upload will return a clear
+> error message instead of crashing.
+
 ---
 
 ## Prerequisites
