@@ -28,18 +28,32 @@ interface Segment {
   entity?: DetectedEntity;
 }
 
-/** Splits the extracted text into plain and entity segments (skipping overlaps). */
+/** Splits the extracted text into plain and entity segments.
+ *
+ * Overlap policy: entities are sorted longest-first within the same offset so that outer
+ * (longer) spans win the visible highlight. A partially-overlapping entity is clipped to the
+ * portion of its span that has not already been covered. A fully-nested entity (its entire
+ * span already consumed) is skipped from the text pane but still appears in the side checklist
+ * and is still redacted — the checklist is the source of truth.
+ */
 function buildSegments(text: string, entities: DetectedEntity[]): Segment[] {
-  const ordered = [...entities].sort((a, b) => a.offset - b.offset);
+  // Sort: ascending offset, then descending length (longest-first wins on ties).
+  const ordered = [...entities].sort((a, b) =>
+    a.offset !== b.offset ? a.offset - b.offset : b.length - a.length,
+  );
   const segments: Segment[] = [];
   let cursor = 0;
 
   for (const entity of ordered) {
-    if (entity.offset < cursor) continue; // overlapping — already covered
-    if (entity.offset > cursor) segments.push({ text: text.slice(cursor, entity.offset) });
-    const end = entity.offset + entity.length;
-    segments.push({ text: text.slice(entity.offset, end), entity });
-    cursor = end;
+    const entityEnd = entity.offset + entity.length;
+    // Clip the visible start to wherever we are (cursor).
+    const visibleStart = Math.max(entity.offset, cursor);
+    // If the entity is entirely consumed, skip its text pane appearance.
+    if (visibleStart >= entityEnd) continue;
+    // Plain text before this entity's visible portion.
+    if (visibleStart > cursor) segments.push({ text: text.slice(cursor, visibleStart) });
+    segments.push({ text: text.slice(visibleStart, entityEnd), entity });
+    cursor = entityEnd;
   }
   if (cursor < text.length) segments.push({ text: text.slice(cursor) });
 
