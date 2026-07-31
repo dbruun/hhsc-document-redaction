@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="DocumentRedaction.API/DocumentRedaction.API.csproj" />
+  <Project Path="DocumentRedaction.Tests/DocumentRedaction.Tests.csproj" />
+</Solution>
