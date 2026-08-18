@@ -105,6 +105,29 @@ public class DocumentRedactionOrchestratorTests
     }
 
     [Fact]
+    public async Task ApplyAsync_keeps_detected_entity_selection_per_instance()
+    {
+        var extracted = new ExtractedDocument(
+            "Amy met Amy.",
+            Array.Empty<PageInfo>(),
+            Array.Empty<LayoutWord>());
+        var pii = new FakePiiClient(
+            new PiiEntity("Amy", "Person", "Nurse", 0.9, 0, 3),
+            new PiiEntity("Amy", "Person", "Nurse", 0.9, 8, 3));
+        var blob = new FakeBlobStorage();
+        var processor = new FakeProcessor("text/plain", extracted);
+        var sut = BuildSut(processor, pii, blob);
+
+        var detection = await sut.DetectAsync(MakeFile(extracted.Text, "n.txt", "text/plain"));
+
+        var apply = await sut.ApplyAsync(detection.JobId, new[] { "e0" });
+
+        var selected = Assert.Single(processor.LastSelected!);
+        Assert.Equal(0, selected.Offset);
+        Assert.Equal(1, apply.RedactedCount);
+    }
+
+    [Fact]
     public async Task ApplyAsync_excludes_whitelisted_terms_from_selected_and_manual_redactions()
     {
         var pii = new FakePiiClient(

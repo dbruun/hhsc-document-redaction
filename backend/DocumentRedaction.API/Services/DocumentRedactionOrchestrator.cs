@@ -181,25 +181,28 @@ public sealed class DocumentRedactionOrchestrator : IDocumentRedactionOrchestrat
         IReadOnlyList<string> whitelistedTerms)
     {
         var whitelist = NormalizeTerms(whitelistedTerms).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var terms = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var manualTerms = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var targets = new List<DetectedEntity>();
+        var seenSpans = new HashSet<(int Offset, int Length)>();
 
         foreach (var entity in state.Entities)
         {
             if (selectedEntityIds.Contains(entity.Id) && !whitelist.Contains(entity.Text))
-                terms.Add(entity.Text);
+            {
+                if (seenSpans.Add((entity.Offset, entity.Length)))
+                    targets.Add(entity);
+            }
         }
 
         foreach (var term in NormalizeTerms(manualRedactionTerms))
         {
             if (!whitelist.Contains(term))
-                terms.Add(term);
+                manualTerms.Add(term);
         }
 
-        var targets = new List<DetectedEntity>();
-        var seenSpans = new HashSet<(int Offset, int Length)>();
         var index = 0;
 
-        foreach (var term in terms.OrderBy(t => t, StringComparer.OrdinalIgnoreCase))
+        foreach (var term in manualTerms.OrderBy(t => t, StringComparer.OrdinalIgnoreCase))
         {
             foreach (var match in FindTermOccurrences(state.ExtractedText, term))
             {

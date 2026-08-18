@@ -36,17 +36,26 @@ export default function App() {
   };
 
   const handleDownload = async (jobId: string, fileName: string) => {
-    const res = await fetch(`/api/document/${jobId}/redacted`);
-    const blob = await res.blob();
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    const dot = fileName.lastIndexOf('.');
-    const baseName = dot > 0 ? fileName.slice(0, dot) : fileName;
-    const ext = dot > 0 ? fileName.slice(dot) : '';
-    a.download = `${baseName}_redacted${ext}`;
-    a.click();
-    URL.revokeObjectURL(url);
+    try {
+      const res = await fetch(`/api/document/${jobId}/redacted`);
+      if (!res.ok) throw new Error(`Download failed with status ${res.status}`);
+
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const dot = fileName.lastIndexOf('.');
+      const baseName = dot > 0 ? fileName.slice(0, dot) : fileName;
+      const ext = dot > 0 ? fileName.slice(dot) : '';
+      a.download = `${baseName}_redacted${ext}`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setStatus({
+        kind: 'error',
+        message: err instanceof Error ? err.message : 'Unable to download the redacted document.',
+      });
+    }
   };
 
   return (
