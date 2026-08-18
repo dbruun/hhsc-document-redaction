@@ -1,0 +1,50 @@
+.dropZone {
+  border: 2px dashed #b0bec5;
+  border-radius: 12px;
+  padding: 48px 32px;
+  text-align: center;
+  cursor: pointer;
+  background: #fafbfc;
+  transition: border-color 0.2s, background 0.2s;
+  outline: none;
+}
+
+.dropZone:hover,
+.dropZone:focus {
+  border-color: #0078d4;
+  background: #f0f7ff;
+}
+
+.dragging {
+  border-color: #0078d4;
+  background: #e8f3fc;
+}
+
+.hiddenInput {
+  display: none;
+}
+
+.icon {
+  font-size: 48px;
+  margin-bottom: 12px;
+  pointer-events: none;
+}
+
+.primaryText {
+  font-size: 1rem;
+  color: #1a1a2e;
+  margin: 0 0 6px;
+  pointer-events: none;
+}
+
+.link {
+  color: #0078d4;
+  text-decoration: underline;
+}
+
+.secondaryText {
+  font-size: 0.8rem;
+  color: #6b7280;
+  margin: 0;
+  pointer-events: none;
+}
