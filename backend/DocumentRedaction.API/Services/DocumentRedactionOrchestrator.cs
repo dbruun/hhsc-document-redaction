@@ -122,8 +122,8 @@ public sealed class DocumentRedactionOrchestrator : IDocumentRedactionOrchestrat
         var processor = ResolveProcessor(persisted.Detection.ContentType);
 
         _logger.LogInformation(
-            "Apply job {JobId}: redacting {Selected} target(s) from {Total} detected instance(s).",
-            jobId, selected.Count, persisted.Detection.Entities.Count);
+            "Apply job: redacting {Selected} target(s) from {Total} detected instance(s).",
+            selected.Count, persisted.Detection.Entities.Count);
 
         var redacted = await processor.RedactAsync(original.Content, selected, ct);
 

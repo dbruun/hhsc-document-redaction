@@ -190,7 +190,7 @@ public sealed class BlobStorageService : IBlobStorageService
             HttpHeaders = new BlobHttpHeaders { ContentType = contentType }
         };
 
-        _logger.LogInformation("Uploading redacted document blob {BlobName}", blobName);
+        _logger.LogInformation("Uploading redacted document blob.");
         await blob.UploadAsync(content.ToStream(), options, ct);
         return blob.Uri.ToString();
     }

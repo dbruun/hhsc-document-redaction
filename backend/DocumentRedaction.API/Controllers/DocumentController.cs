@@ -73,12 +73,12 @@ public sealed class DocumentController : ControllerBase
         }
         catch (ArgumentException ex)
         {
-            _logger.LogWarning(ex, "Apply validation error for job '{JobId}'", jobId);
+            _logger.LogWarning(ex, "Apply validation error.");
             return BadRequest(new ErrorResponse { Error = ex.Message });
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Unexpected error applying redactions for job '{JobId}'", jobId);
+            _logger.LogError(ex, "Unexpected error applying redactions.");
             return Problem("An unexpected error occurred while redacting the document.", ex);
         }
     }
