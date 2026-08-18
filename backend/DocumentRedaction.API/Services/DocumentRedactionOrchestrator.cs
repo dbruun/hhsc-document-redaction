@@ -75,6 +75,22 @@ public sealed class DocumentRedactionOrchestrator : IDocumentRedactionOrchestrat
 
         var entities = BuildEntities(rawEntities, extracted);
 
+        // Per-word boxes (PDF only) so the reviewer can click a word the models missed and add
+        // it as a manual redaction. Text is sliced from the extracted content for the tooltip.
+        var words = new List<LayoutWordInfo>(extracted.Words.Count);
+        foreach (var w in extracted.Words)
+        {
+            words.Add(new LayoutWordInfo
+            {
+                Page = w.Box.Page,
+                X = w.Box.X,
+                Y = w.Box.Y,
+                Width = w.Box.Width,
+                Height = w.Box.Height,
+                Text = SafeSlice(extracted.Text, w.Offset, w.Length)
+            });
+        }
+
         var response = new DetectionResponse
         {
             JobId = jobId,
@@ -85,6 +101,7 @@ public sealed class DocumentRedactionOrchestrator : IDocumentRedactionOrchestrat
             PageCount = extracted.Pages.Count,
             Pages = extracted.Pages,
             Entities = entities,
+            Words = words,
             ProcessedAt = DateTimeOffset.UtcNow
         };
 
@@ -95,7 +112,7 @@ public sealed class DocumentRedactionOrchestrator : IDocumentRedactionOrchestrat
     }
 
     public async Task<ApplyResponse> ApplyAsync(
-        string jobId, IReadOnlyList<string> selectedEntityIds, CancellationToken ct = default)
+        string jobId, IReadOnlyList<string> selectedEntityIds, IReadOnlyList<DetectedBox> manualBoxes, CancellationToken ct = default)
     {
         var stateJson = await _blobStorage.DownloadStateAsync(jobId, ct)
             ?? throw new ArgumentException($"Unknown job '{jobId}'.");
@@ -105,16 +122,34 @@ public sealed class DocumentRedactionOrchestrator : IDocumentRedactionOrchestrat
         var selectedSet = selectedEntityIds.ToHashSet(StringComparer.Ordinal);
         var selected = state.Entities.Where(e => selectedSet.Contains(e.Id)).ToList();
 
+        // Manual boxes the reviewer added by clicking missed words become synthetic single-box
+        // entities so the per-format redactor treats them identically to detected instances.
+        var manual = (manualBoxes ?? Array.Empty<DetectedBox>())
+            .Select((box, i) => new DetectedEntity
+            {
+                Id = $"m{i}",
+                Text = string.Empty,
+                Category = "Manual",
+                SubCategory = null,
+                ConfidenceScore = 1.0,
+                Offset = 0,
+                Length = 0,
+                Boxes = new[] { box }
+            })
+            .ToList();
+
+        var toRedact = selected.Concat(manual).ToList();
+
         var original = await _blobStorage.DownloadOriginalAsync(jobId, ct)
             ?? throw new ArgumentException($"Original document for job '{jobId}' not found.");
 
         var processor = ResolveProcessor(state.ContentType);
 
         _logger.LogInformation(
-            "Apply job {JobId}: redacting {Selected} of {Total} instance(s).",
-            jobId.Replace('\r', '_').Replace('\n', '_'), selected.Count, state.Entities.Count);
+            "Apply job {JobId}: redacting {Selected} detected + {Manual} manual instance(s).",
+            jobId.Replace('\r', '_').Replace('\n', '_'), selected.Count, manual.Count);
 
-        var redacted = await processor.RedactAsync(original.Content, selected, ct);
+        var redacted = await processor.RedactAsync(original.Content, toRedact, ct);
 
         var extension = Path.GetExtension(state.FileName);
         var redactedBlobName = $"redacted/{jobId}{extension}";
@@ -125,7 +160,7 @@ public sealed class DocumentRedactionOrchestrator : IDocumentRedactionOrchestrat
         {
             JobId = jobId,
             RedactedUrl = redactedUrl,
-            RedactedCount = selected.Count,
+            RedactedCount = toRedact.Count,
             FileName = state.FileName,
             ProcessedAt = DateTimeOffset.UtcNow
         };
@@ -261,6 +296,14 @@ public sealed class DocumentRedactionOrchestrator : IDocumentRedactionOrchestrat
         _processors.FirstOrDefault(p => p.CanHandle(contentType))
         ?? throw new ArgumentException(
             $"Unsupported file type '{contentType}'. Supported: PDF, DOCX, and TXT.");
+
+    private static string SafeSlice(string text, int offset, int length)
+    {
+        if (offset < 0 || length <= 0 || offset >= text.Length)
+            return string.Empty;
+        var end = Math.Min(offset + length, text.Length);
+        return text[offset..end];
+    }
 
     private static void ValidateFile(IFormFile file)
     {

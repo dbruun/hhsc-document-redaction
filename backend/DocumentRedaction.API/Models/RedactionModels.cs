@@ -32,6 +32,21 @@ public record PageInfo
 }
 
 /// <summary>
+/// A single word with its normalized page box (PDF only). Sent to the client so a reviewer
+/// can click a word the models missed and add it as a manual redaction. Coordinates are 0..1
+/// relative to the page, matching <see cref="DetectedBox"/>.
+/// </summary>
+public record LayoutWordInfo
+{
+    public required int Page { get; init; }
+    public required double X { get; init; }
+    public required double Y { get; init; }
+    public required double Width { get; init; }
+    public required double Height { get; init; }
+    public required string Text { get; init; }
+}
+
+/// <summary>
 /// A single detected PII instance. Each instance is independently selectable so the
 /// reviewer can redact, for example, a nurse and a doctor while keeping the patient —
 /// even though all three share the <c>Person</c> category.
@@ -73,6 +88,10 @@ public record DetectionResponse
     public required int PageCount { get; init; }
     public required IReadOnlyList<PageInfo> Pages { get; init; }
     public required IReadOnlyList<DetectedEntity> Entities { get; init; }
+
+    /// <summary>Per-word boxes for click-to-add manual redaction (PDF only; empty otherwise).</summary>
+    public IReadOnlyList<LayoutWordInfo> Words { get; init; } = Array.Empty<LayoutWordInfo>();
+
     public required DateTimeOffset ProcessedAt { get; init; }
 }
 
@@ -80,6 +99,12 @@ public record DetectionResponse
 public record ApplyRequest
 {
     public required IReadOnlyList<string> SelectedEntityIds { get; init; }
+
+    /// <summary>
+    /// Extra page boxes the reviewer added by clicking words the models missed (PDF only).
+    /// These are redacted in addition to the selected detected instances.
+    /// </summary>
+    public IReadOnlyList<DetectedBox> ManualBoxes { get; init; } = Array.Empty<DetectedBox>();
 }
 
 /// <summary>Result of the APPLY phase.</summary>

@@ -100,7 +100,7 @@ public class DocumentRedactionOrchestratorTests
         var detection = await sut.DetectAsync(MakeFile("Amy, Cara and Bob", "n.txt", "text/plain"));
 
         // Redact the nurse and doctor, keep the patient.
-        var apply = await sut.ApplyAsync(detection.JobId, new[] { "e0", "e1" });
+        var apply = await sut.ApplyAsync(detection.JobId, new[] { "e0", "e1" }, Array.Empty<DetectedBox>());
 
         Assert.Equal(2, apply.RedactedCount);
         Assert.Equal(new[] { "e0", "e1" }, processor.LastSelected!.Select(e => e.Id));
@@ -113,7 +113,7 @@ public class DocumentRedactionOrchestratorTests
         var sut = BuildSut(new FakeProcessor("text/plain"), new FakePiiClient(), new FakeBlobStorage());
 
         await Assert.ThrowsAsync<ArgumentException>(
-            () => sut.ApplyAsync("does-not-exist", new[] { "e0" }));
+            () => sut.ApplyAsync("does-not-exist", new[] { "e0" }, Array.Empty<DetectedBox>()));
     }
 
     [Theory]

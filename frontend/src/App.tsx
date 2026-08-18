@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { UploadStatus } from './types';
+import type { UploadStatus, DetectedBox } from './types';
 import { applyRedactions } from './services/api';
 import DocumentUpload from './components/DocumentUpload';
 import LoadingSpinner from './components/LoadingSpinner';
@@ -11,12 +11,12 @@ export default function App() {
 
   const handleReset = () => setStatus({ kind: 'idle' });
 
-  const handleApply = async (selectedIds: string[]) => {
+  const handleApply = async (selectedIds: string[], manualBoxes: DetectedBox[]) => {
     if (status.kind !== 'reviewing') return;
     const detection = status.detection;
     setStatus({ kind: 'applying', detection });
     try {
-      const result = await applyRedactions(detection.jobId, selectedIds);
+      const result = await applyRedactions(detection.jobId, selectedIds, manualBoxes);
       setStatus({ kind: 'success', result, detection });
     } catch (err) {
       setStatus({

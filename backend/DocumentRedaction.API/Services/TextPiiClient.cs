@@ -1,4 +1,4 @@
-using Azure.Core;
+﻿using Azure.Core;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
@@ -24,8 +24,10 @@ public sealed class TextPiiClient : ITextPiiClient
 {
     private const string ApiVersion = "2024-11-15-preview";
 
-    /// The Language text endpoint accepts up to 125,000 characters per document; leave headroom.
-    private const int MaxChunkChars = 120_000;
+    /// The synchronous <c>/language/:analyze-text</c> endpoint accepts at most 5,120 characters
+    /// per document. Larger documents are rejected (returned in the response's <c>errors</c>
+    /// array), so long inputs must be split into sub-limit chunks. Leave headroom under 5,120.
+    private const int MaxChunkChars = 5_000;
 
     private static readonly string[] CognitiveServicesScopes = { "https://cognitiveservices.azure.com/.default" };
 
@@ -100,8 +102,22 @@ public sealed class TextPiiClient : ITextPiiClient
         using var doc = JsonDocument.Parse(body);
         var root = doc.RootElement;
 
-        if (!root.TryGetProperty("results", out var resultsEl)
-            || !resultsEl.TryGetProperty("documents", out var docsEl)
+        if (!root.TryGetProperty("results", out var resultsEl))
+            return Array.Empty<PiiEntity>();
+
+        // Surface per-document failures (e.g. a chunk exceeding the size limit) instead of
+        // silently returning nothing - a dropped chunk means undetected, unredacted PII.
+        if (resultsEl.TryGetProperty("errors", out var errorsEl) && errorsEl.GetArrayLength() > 0)
+        {
+            var detail = errorsEl[0].TryGetProperty("error", out var errObj)
+                && errObj.TryGetProperty("message", out var msg)
+                    ? msg.GetString()
+                    : errorsEl[0].GetRawText();
+            throw new InvalidOperationException(
+                $"Language text PII reported a document-level error (chunk length {text.Length}): {detail}");
+        }
+
+        if (!resultsEl.TryGetProperty("documents", out var docsEl)
             || docsEl.GetArrayLength() == 0)
         {
             return Array.Empty<PiiEntity>();

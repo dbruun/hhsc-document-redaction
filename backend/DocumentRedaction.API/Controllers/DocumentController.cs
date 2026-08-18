@@ -64,7 +64,8 @@ public sealed class DocumentController : ControllerBase
         var safeJobId = jobId.Replace('\r', '_').Replace('\n', '_');
         try
         {
-            var result = await _orchestrator.ApplyAsync(jobId, request.SelectedEntityIds ?? [], ct);
+            var result = await _orchestrator.ApplyAsync(
+                jobId, request.SelectedEntityIds ?? [], request.ManualBoxes ?? [], ct);
             return Ok(result);
         }
         catch (ArgumentException ex)

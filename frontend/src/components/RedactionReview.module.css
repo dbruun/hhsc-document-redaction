@@ -65,6 +65,41 @@
   font-size: 0.88rem;
 }
 
+.controls {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+  flex-wrap: wrap;
+  padding: 0.55rem 0.85rem;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+}
+
+.confidence {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  font-size: 0.85rem;
+  color: #374151;
+}
+
+.slider {
+  width: 160px;
+  accent-color: #b91c1c;
+}
+
+.controlHint {
+  color: #6b7280;
+  font-size: 0.8rem;
+}
+
+.manualCount {
+  font-size: 0.85rem;
+  color: #111827;
+  font-weight: 600;
+}
+
 .body {
   display: grid;
   grid-template-columns: 1fr 340px;
@@ -166,6 +201,48 @@
   font-weight: 700;
   font-size: 0.82rem;
   margin-bottom: 0.35rem;
+}
+
+.groupName {
+  flex: 1;
+}
+
+.collapseBtn {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex: 1;
+  min-width: 0;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+
+.caret {
+  font-size: 0.7rem;
+  width: 0.8rem;
+  flex-shrink: 0;
+  color: #6b7280;
+}
+
+.groupToggle {
+  background: none;
+  border: none;
+  color: #2563eb;
+  cursor: pointer;
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0;
+  white-space: nowrap;
+}
+
+.groupToggle:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 
 .swatch {

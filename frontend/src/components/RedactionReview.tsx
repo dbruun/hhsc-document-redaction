@@ -1,8 +1,8 @@
 import { useMemo, useState } from 'react';
-import type { DetectionResponse, DetectedEntity } from '../types';
+import type { DetectionResponse, DetectedEntity, DetectedBox } from '../types';
 import styles from './RedactionReview.module.css';
 import { categoryColor } from './categoryColors';
-import PdfHighlightPreview from './PdfHighlightPreview';
+import PdfHighlightPreview, { type ManualBox } from './PdfHighlightPreview';
 
 interface Segment {
   text: string;
@@ -50,14 +50,34 @@ function formatBytes(bytes: number): string {
 interface RedactionReviewProps {
   detection: DetectionResponse;
   busy: boolean;
-  onApply: (selectedIds: string[]) => void;
+  onApply: (selectedIds: string[], manualBoxes: DetectedBox[]) => void;
   onCancel: () => void;
 }
 
+/** Detections below this confidence (percent) are hidden by default to cut false positives. */
+const DEFAULT_MIN_CONFIDENCE = 75;
+
 export default function RedactionReview({ detection, busy, onApply, onCancel }: RedactionReviewProps) {
-  const [selected, setSelected] = useState<Set<string>>(
-    () => new Set(detection.entities.map((e) => e.id)),
+  // Confidence filter (percent). Detections below the threshold are hidden entirely from the
+  // preview, checklist, and counts — a quick way to suppress low-confidence false positives.
+  const [minConfidence, setMinConfidence] = useState(DEFAULT_MIN_CONFIDENCE);
+
+  // Entities at or above the current threshold. Everything downstream (preview, checklist,
+  // selection, counts) works off this filtered set.
+  const visibleEntities = useMemo(
+    () => detection.entities.filter((e) => e.confidenceScore * 100 >= minConfidence),
+    [detection.entities, minConfidence],
   );
+
+  const [selected, setSelected] = useState<Set<string>>(
+    () =>
+      new Set(
+        detection.entities
+          .filter((e) => e.confidenceScore * 100 >= DEFAULT_MIN_CONFIDENCE)
+          .map((e) => e.id),
+      ),
+  );
+  const [manualBoxes, setManualBoxes] = useState<ManualBox[]>([]);
 
   const toggle = (id: string) =>
     setSelected((prev) => {
@@ -67,26 +87,80 @@ export default function RedactionReview({ detection, busy, onApply, onCancel }: 
       return next;
     });
 
-  const selectAll = () => setSelected(new Set(detection.entities.map((e) => e.id)));
+  const selectAll = () => setSelected(new Set(visibleEntities.map((e) => e.id)));
   const clearAll = () => setSelected(new Set());
 
+  // Select or deselect every visible instance in a category at once (e.g. clear all DateTime).
+  const toggleCategory = (ids: string[], select: boolean) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      for (const id of ids) {
+        if (select) next.add(id);
+        else next.delete(id);
+      }
+      return next;
+    });
+
+  // Move the confidence threshold: hide detections below it and (re)select everything now
+  // visible so the reviewer immediately sees exactly what will be redacted.
+  const applyConfidenceFilter = (pct: number) => {
+    setMinConfidence(pct);
+    setSelected(new Set(detection.entities.filter((e) => e.confidenceScore * 100 >= pct).map((e) => e.id)));
+  };
+
+  const addManual = (box: { page: number; x: number; y: number; width: number; height: number }) =>
+    setManualBoxes((prev) => {
+      // Ignore a duplicate click on the same word.
+      if (prev.some((m) => m.page === box.page && m.x === box.x && m.y === box.y)) return prev;
+      const id = `m-${box.page}-${Math.round(box.x * 10000)}-${Math.round(box.y * 10000)}`;
+      return [...prev, { id, ...box }];
+    });
+
+  const removeManual = (id: string) => setManualBoxes((prev) => prev.filter((m) => m.id !== id));
+
+  // Categories the reviewer has expanded in the checklist. Empty by default (all collapsed).
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const toggleCollapsed = (category: string) =>
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(category)) next.delete(category);
+      else next.add(category);
+      return next;
+    });
+
+  const handleApply = () =>
+    onApply(
+      [...selected],
+      manualBoxes.map(({ page, x, y, width, height }) => ({ page, x, y, width, height })),
+    );
+
   const segments = useMemo(
-    () => buildSegments(detection.extractedText, detection.entities),
-    [detection.extractedText, detection.entities],
+    () => buildSegments(detection.extractedText, visibleEntities),
+    [detection.extractedText, visibleEntities],
   );
 
   const grouped = useMemo(() => {
     const map = new Map<string, DetectedEntity[]>();
-    for (const e of detection.entities) {
+    for (const e of visibleEntities) {
       const list = map.get(e.category) ?? [];
       list.push(e);
       map.set(e.category, list);
     }
     return [...map.entries()].sort((a, b) => a[0].localeCompare(b[0]));
-  }, [detection.entities]);
+  }, [visibleEntities]);
+
+  // A view of the detection limited to entities above the threshold, so the PDF preview only
+  // draws boxes for what's currently visible.
+  const filteredDetection = useMemo(
+    () => ({ ...detection, entities: visibleEntities }),
+    [detection, visibleEntities],
+  );
 
   const selectedCount = selected.size;
-  const total = detection.entities.length;
+  const total = visibleEntities.length;
+  const hiddenCount = detection.entities.length - visibleEntities.length;
+  const isPdf = detection.contentType === 'application/pdf';
+  const redactTotal = selectedCount + manualBoxes.length;
 
   return (
     <div className={styles.container}>
@@ -95,12 +169,13 @@ export default function RedactionReview({ detection, busy, onApply, onCancel }: 
           <h2 className={styles.title}>Review &amp; select what to redact</h2>
           <p className={styles.meta}>
             <strong>{detection.fileName}</strong> &nbsp;·&nbsp; {formatBytes(detection.fileSizeBytes)}{' '}
-            &nbsp;·&nbsp; {total} PII item{total !== 1 ? 's' : ''} detected
+            &nbsp;·&nbsp; {total} PII item{total !== 1 ? 's' : ''} shown
+            {hiddenCount > 0 ? ` (${hiddenCount} below ${minConfidence}% hidden)` : ''}
           </p>
         </div>
         <div className={styles.headerActions}>
-          <button className={styles.applyBtn} onClick={() => onApply([...selected])} disabled={busy}>
-            {busy ? 'Redacting…' : `Redact ${selectedCount} selected`}
+          <button className={styles.applyBtn} onClick={handleApply} disabled={busy}>
+            {busy ? 'Redacting…' : `Redact ${redactTotal} item${redactTotal !== 1 ? 's' : ''}`}
           </button>
           <button className={styles.cancelBtn} onClick={onCancel} disabled={busy}>
             Cancel
@@ -109,10 +184,37 @@ export default function RedactionReview({ detection, busy, onApply, onCancel }: 
       </div>
 
       <p className={styles.hint}>
-        Everything detected is selected by default. Uncheck anything that should be kept — for
-        example, keep the patient while redacting the nurse and doctor. Only the checked items are
-        removed.
+        Showing detections at or above the confidence threshold, all selected by default. Uncheck
+        anything that should be kept — for example, keep the patient while redacting the nurse and
+        doctor. Only the checked items are removed.
+        {isPdf ? ' Missed something? Click any word in the preview to add a manual redaction (click it again to remove).' : ''}
       </p>
+
+      {(detection.entities.length > 0 || manualBoxes.length > 0) && (
+        <div className={styles.controls}>
+          {detection.entities.length > 0 && (
+            <label className={styles.confidence}>
+              Min. confidence: <strong>{minConfidence}%</strong>
+              <input
+                type="range"
+                min={0}
+                max={100}
+                step={5}
+                value={minConfidence}
+                onChange={(e) => applyConfidenceFilter(Number(e.target.value))}
+                disabled={busy}
+                className={styles.slider}
+              />
+              <span className={styles.controlHint}>Lower to show more; raise to hide low-confidence false positives</span>
+            </label>
+          )}
+          {manualBoxes.length > 0 && (
+            <span className={styles.manualCount}>
+              {manualBoxes.length} manual redaction{manualBoxes.length !== 1 ? 's' : ''} added
+            </span>
+          )}
+        </div>
+      )}
 
       <div className={styles.body}>
         {/* Highlighted document preview */}
@@ -120,9 +222,12 @@ export default function RedactionReview({ detection, busy, onApply, onCancel }: 
           <div className={styles.docHeader}>Document preview</div>
           {detection.contentType === 'application/pdf' ? (
             <PdfHighlightPreview
-              detection={detection}
+              detection={filteredDetection}
               selected={selected}
+              manualBoxes={manualBoxes}
               onToggle={toggle}
+              onAddManual={addManual}
+              onRemoveManual={removeManual}
               categoryColor={categoryColor}
             />
           ) : (
@@ -170,38 +275,66 @@ export default function RedactionReview({ detection, busy, onApply, onCancel }: 
           </div>
 
           {total === 0 ? (
-            <div className={styles.empty}>✅ No PII detected in this document.</div>
+            <div className={styles.empty}>
+              {hiddenCount > 0
+                ? `No detections at or above ${minConfidence}% — lower the confidence threshold to show ${hiddenCount} more.`
+                : '✅ No PII detected in this document.'}
+            </div>
           ) : (
             <div className={styles.groups}>
               {grouped.map(([category, items]) => {
                 const color = categoryColor(category);
+                const ids = items.map((e) => e.id);
+                const selectedInGroup = ids.filter((id) => selected.has(id)).length;
+                const allSelected = selectedInGroup === ids.length;
+                const isCollapsed = !expanded.has(category);
                 return (
                   <div key={category} className={styles.group}>
                     <div className={styles.groupTitle} style={{ color }}>
-                      <span className={styles.swatch} style={{ backgroundColor: color }} />
-                      {category} ({items.length})
+                      <button
+                        className={styles.collapseBtn}
+                        onClick={() => toggleCollapsed(category)}
+                        aria-expanded={!isCollapsed}
+                        title={isCollapsed ? `Expand ${category}` : `Collapse ${category}`}
+                      >
+                        <span className={styles.caret} aria-hidden="true">{isCollapsed ? '▸' : '▾'}</span>
+                        <span className={styles.swatch} style={{ backgroundColor: color }} />
+                        <span className={styles.groupName}>
+                          {category} ({selectedInGroup}/{items.length})
+                        </span>
+                      </button>
+                      <button
+                        className={styles.groupToggle}
+                        onClick={() => toggleCategory(ids, !allSelected)}
+                        disabled={busy}
+                        title={allSelected ? `Deselect all ${category}` : `Select all ${category}`}
+                      >
+                        {allSelected ? 'Deselect all' : 'Select all'}
+                      </button>
                     </div>
-                    <ul className={styles.instanceList}>
-                      {items.map((e) => (
-                        <li key={e.id}>
-                          <label className={styles.instance}>
-                            <input
-                              type="checkbox"
-                              checked={selected.has(e.id)}
-                              onChange={() => toggle(e.id)}
-                              disabled={busy}
-                            />
-                            <span className={styles.instanceText}>{e.text || '(blank)'}</span>
-                            {e.subCategory ? (
-                              <span className={styles.subCategory}>{e.subCategory}</span>
-                            ) : null}
-                            <span className={styles.confidence}>
-                              {(e.confidenceScore * 100).toFixed(0)}%
-                            </span>
-                          </label>
-                        </li>
-                      ))}
-                    </ul>
+                    {!isCollapsed && (
+                      <ul className={styles.instanceList}>
+                        {items.map((e) => (
+                          <li key={e.id}>
+                            <label className={styles.instance}>
+                              <input
+                                type="checkbox"
+                                checked={selected.has(e.id)}
+                                onChange={() => toggle(e.id)}
+                                disabled={busy}
+                              />
+                              <span className={styles.instanceText}>{e.text || '(blank)'}</span>
+                              {e.subCategory ? (
+                                <span className={styles.subCategory}>{e.subCategory}</span>
+                              ) : null}
+                              <span className={styles.confidence}>
+                                {(e.confidenceScore * 100).toFixed(0)}%
+                              </span>
+                            </label>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
                   </div>
                 );
               })}

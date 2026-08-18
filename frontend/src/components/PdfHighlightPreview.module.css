@@ -44,6 +44,25 @@
   outline-offset: 1px;
 }
 
+.manualOverlay {
+  position: absolute;
+  border: 2px solid #111827;
+  border-radius: 2px;
+  cursor: pointer;
+  padding: 0;
+  background: rgba(17, 24, 39, 0.85);
+  box-sizing: border-box;
+}
+
+.manualOverlay:hover {
+  background: rgba(17, 24, 39, 0.65);
+}
+
+.manualOverlay:focus {
+  outline: 2px solid #2563eb;
+  outline-offset: 1px;
+}
+
 .status {
   padding: 2rem;
   text-align: center;
