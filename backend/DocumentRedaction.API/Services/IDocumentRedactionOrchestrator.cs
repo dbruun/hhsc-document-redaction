@@ -11,10 +11,15 @@ public interface IDocumentRedactionOrchestrator
     Task<DetectionResponse> DetectAsync(IFormFile file, CancellationToken ct = default);
 
     /// <summary>
-    /// APPLY phase: redacts only the selected instances, preserving the original format,
+    /// APPLY phase: redacts the selected instances plus any manual terms, preserving the original format,
     /// and stores the result.
     /// </summary>
-    Task<ApplyResponse> ApplyAsync(string jobId, IReadOnlyList<string> selectedEntityIds, CancellationToken ct = default);
+    Task<ApplyResponse> ApplyAsync(
+        string jobId,
+        IReadOnlyList<string> selectedEntityIds,
+        IReadOnlyList<string>? manualRedactionTerms = null,
+        IReadOnlyList<string>? whitelistedTerms = null,
+        CancellationToken ct = default);
 
     /// <summary>Opens the original uploaded document for a job, or null if not found.</summary>
     Task<BlobStream?> OpenOriginalAsync(string jobId, CancellationToken ct = default);

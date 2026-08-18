@@ -30,6 +30,8 @@ public sealed class DocumentRedactionOrchestrator : IDocumentRedactionOrchestrat
     private readonly IBlobStorageService _blobStorage;
     private readonly ILogger<DocumentRedactionOrchestrator> _logger;
 
+    private sealed record RedactionJobState(DetectionResponse Detection, IReadOnlyList<LayoutWord> Words);
+
     public DocumentRedactionOrchestrator(
         IEnumerable<IDocumentFormatProcessor> processors,
         ITextPiiClient pii,
@@ -88,45 +90,54 @@ public sealed class DocumentRedactionOrchestrator : IDocumentRedactionOrchestrat
             ProcessedAt = DateTimeOffset.UtcNow
         };
 
-        await _blobStorage.UploadStateAsync(jobId, JsonSerializer.Serialize(response, JsonOptions), ct);
+        var state = new RedactionJobState(response, extracted.Words);
+        await _blobStorage.UploadStateAsync(jobId, JsonSerializer.Serialize(state, JsonOptions), ct);
 
         _logger.LogInformation("Detect job {JobId} found {Count} PII instance(s).", jobId, entities.Count);
         return response;
     }
 
     public async Task<ApplyResponse> ApplyAsync(
-        string jobId, IReadOnlyList<string> selectedEntityIds, CancellationToken ct = default)
+        string jobId,
+        IReadOnlyList<string> selectedEntityIds,
+        IReadOnlyList<string>? manualRedactionTerms = null,
+        IReadOnlyList<string>? whitelistedTerms = null,
+        CancellationToken ct = default)
     {
         var stateJson = await _blobStorage.DownloadStateAsync(jobId, ct)
             ?? throw new ArgumentException($"Unknown job '{jobId}'.");
-        var state = JsonSerializer.Deserialize<DetectionResponse>(stateJson, JsonOptions)
-            ?? throw new InvalidOperationException($"Corrupt job state for '{jobId}'.");
+        var persisted = LoadState(jobId, stateJson);
 
         var selectedSet = selectedEntityIds.ToHashSet(StringComparer.Ordinal);
-        var selected = state.Entities.Where(e => selectedSet.Contains(e.Id)).ToList();
+        var selected = BuildRedactionTargets(
+            persisted.Detection,
+            persisted.Words,
+            selectedSet,
+            manualRedactionTerms ?? Array.Empty<string>(),
+            whitelistedTerms ?? Array.Empty<string>());
 
         var original = await _blobStorage.DownloadOriginalAsync(jobId, ct)
             ?? throw new ArgumentException($"Original document for job '{jobId}' not found.");
 
-        var processor = ResolveProcessor(state.ContentType);
+        var processor = ResolveProcessor(persisted.Detection.ContentType);
 
         _logger.LogInformation(
-            "Apply job {JobId}: redacting {Selected} of {Total} instance(s).",
-            jobId, selected.Count, state.Entities.Count);
+            "Apply job {JobId}: redacting {Selected} target(s) from {Total} detected instance(s).",
+            jobId, selected.Count, persisted.Detection.Entities.Count);
 
         var redacted = await processor.RedactAsync(original.Content, selected, ct);
 
-        var extension = Path.GetExtension(state.FileName);
+        var extension = Path.GetExtension(persisted.Detection.FileName);
         var redactedBlobName = $"redacted/{jobId}{extension}";
         var redactedUrl = await _blobStorage.UploadToRedactedAsync(
-            redacted, redactedBlobName, state.ContentType, ct);
+            redacted, redactedBlobName, persisted.Detection.ContentType, ct);
 
         return new ApplyResponse
         {
             JobId = jobId,
             RedactedUrl = redactedUrl,
             RedactedCount = selected.Count,
-            FileName = state.FileName,
+            FileName = persisted.Detection.FileName,
             ProcessedAt = DateTimeOffset.UtcNow
         };
     }
@@ -160,6 +171,104 @@ public sealed class DocumentRedactionOrchestrator : IDocumentRedactionOrchestrat
             });
         }
         return result;
+    }
+
+    private static IReadOnlyList<DetectedEntity> BuildRedactionTargets(
+        DetectionResponse state,
+        IReadOnlyList<LayoutWord> words,
+        HashSet<string> selectedEntityIds,
+        IReadOnlyList<string> manualRedactionTerms,
+        IReadOnlyList<string> whitelistedTerms)
+    {
+        var whitelist = NormalizeTerms(whitelistedTerms).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var terms = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var entity in state.Entities)
+        {
+            if (selectedEntityIds.Contains(entity.Id) && !whitelist.Contains(entity.Text))
+                terms.Add(entity.Text);
+        }
+
+        foreach (var term in NormalizeTerms(manualRedactionTerms))
+        {
+            if (!whitelist.Contains(term))
+                terms.Add(term);
+        }
+
+        var targets = new List<DetectedEntity>();
+        var seenSpans = new HashSet<(int Offset, int Length)>();
+        var index = 0;
+
+        foreach (var term in terms.OrderBy(t => t, StringComparer.OrdinalIgnoreCase))
+        {
+            foreach (var match in FindTermOccurrences(state.ExtractedText, term))
+            {
+                if (!seenSpans.Add(match))
+                    continue;
+
+                targets.Add(new DetectedEntity
+                {
+                    Id = $"r{index++}",
+                    Text = state.ExtractedText.Substring(match.Offset, match.Length),
+                    Category = "Manual",
+                    SubCategory = null,
+                    ConfidenceScore = 1,
+                    Offset = match.Offset,
+                    Length = match.Length,
+                    Boxes = MapBoxes(match.Offset, match.Length, words)
+                });
+            }
+        }
+
+        return targets
+            .OrderBy(e => e.Offset)
+            .ThenByDescending(e => e.Length)
+            .ToList();
+    }
+
+    private static IEnumerable<string> NormalizeTerms(IEnumerable<string> terms) =>
+        terms
+            .Select(t => t.Trim())
+            .Where(t => t.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase);
+
+    private static IEnumerable<(int Offset, int Length)> FindTermOccurrences(string text, string term)
+    {
+        var start = 0;
+        while (start < text.Length)
+        {
+            var index = text.IndexOf(term, start, StringComparison.OrdinalIgnoreCase);
+            if (index < 0)
+                yield break;
+
+            if (IsTermBoundary(text, index, term.Length))
+                yield return (index, term.Length);
+
+            start = index + Math.Max(1, term.Length);
+        }
+    }
+
+    private static bool IsTermBoundary(string text, int offset, int length)
+    {
+        char? before = offset == 0 ? null : text[offset - 1];
+        var afterIndex = offset + length;
+        char? after = afterIndex >= text.Length ? null : text[afterIndex];
+
+        return !IsWordChar(before) && !IsWordChar(after);
+    }
+
+    private static bool IsWordChar(char? c) =>
+        c.HasValue && (char.IsLetterOrDigit(c.Value) || c.Value == '_');
+
+    private static RedactionJobState LoadState(string jobId, string stateJson)
+    {
+        var persisted = JsonSerializer.Deserialize<RedactionJobState>(stateJson, JsonOptions);
+        if (persisted?.Detection is not null)
+            return persisted;
+
+        var detection = JsonSerializer.Deserialize<DetectionResponse>(stateJson, JsonOptions)
+            ?? throw new InvalidOperationException($"Corrupt job state for '{jobId}'.");
+        return new RedactionJobState(detection, Array.Empty<LayoutWord>());
     }
 
     /// <summary>

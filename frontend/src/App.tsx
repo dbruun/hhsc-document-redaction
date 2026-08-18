@@ -11,12 +11,21 @@ export default function App() {
 
   const handleReset = () => setStatus({ kind: 'idle' });
 
-  const handleApply = async (selectedIds: string[]) => {
+  const handleApply = async (
+    selectedIds: string[],
+    manualRedactionTerms: string[],
+    whitelistedTerms: string[],
+  ) => {
     if (status.kind !== 'reviewing') return;
     const detection = status.detection;
     setStatus({ kind: 'applying', detection });
     try {
-      const result = await applyRedactions(detection.jobId, selectedIds);
+      const result = await applyRedactions(
+        detection.jobId,
+        selectedIds,
+        manualRedactionTerms,
+        whitelistedTerms,
+      );
       setStatus({ kind: 'success', result, detection });
     } catch (err) {
       setStatus({

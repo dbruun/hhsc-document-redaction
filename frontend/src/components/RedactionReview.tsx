@@ -52,10 +52,21 @@ function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+function parseTerms(value: string): string[] {
+  return value
+    .split(/[\n,]/)
+    .map((term) => term.trim())
+    .filter(Boolean);
+}
+
 interface RedactionReviewProps {
   detection: DetectionResponse;
   busy: boolean;
-  onApply: (selectedIds: string[]) => void;
+  onApply: (
+    selectedIds: string[],
+    manualRedactionTerms: string[],
+    whitelistedTerms: string[],
+  ) => void;
   onCancel: () => void;
 }
 
@@ -63,6 +74,8 @@ export default function RedactionReview({ detection, busy, onApply, onCancel }: 
   const [selected, setSelected] = useState<Set<string>>(
     () => new Set(detection.entities.map((e) => e.id)),
   );
+  const [manualTerms, setManualTerms] = useState('');
+  const [whitelistTerms, setWhitelistTerms] = useState('');
 
   const toggle = (id: string) =>
     setSelected((prev) => {
@@ -92,6 +105,7 @@ export default function RedactionReview({ detection, busy, onApply, onCancel }: 
 
   const selectedCount = selected.size;
   const total = detection.entities.length;
+  const apply = () => onApply([...selected], parseTerms(manualTerms), parseTerms(whitelistTerms));
 
   return (
     <div className={styles.container}>
@@ -104,7 +118,7 @@ export default function RedactionReview({ detection, busy, onApply, onCancel }: 
           </p>
         </div>
         <div className={styles.headerActions}>
-          <button className={styles.applyBtn} onClick={() => onApply([...selected])} disabled={busy}>
+          <button className={styles.applyBtn} onClick={apply} disabled={busy}>
             {busy ? 'Redacting…' : `Redact ${selectedCount} selected`}
           </button>
           <button className={styles.cancelBtn} onClick={onCancel} disabled={busy}>
@@ -116,7 +130,7 @@ export default function RedactionReview({ detection, busy, onApply, onCancel }: 
       <p className={styles.hint}>
         Everything detected is selected by default. Uncheck anything that should be kept — for
         example, keep the patient while redacting the nurse and doctor. Only the checked items are
-        removed.
+        removed. Manual terms are redacted everywhere they appear unless they are on the whitelist.
       </p>
 
       <div className={styles.body}>
@@ -163,6 +177,31 @@ export default function RedactionReview({ detection, busy, onApply, onCancel }: 
                 None
               </button>
             </div>
+          </div>
+
+          <div className={styles.termControls}>
+            <label className={styles.termLabel}>
+              Manual redaction words or phrases
+              <textarea
+                className={styles.termInput}
+                value={manualTerms}
+                onChange={(e) => setManualTerms(e.target.value)}
+                placeholder="One term per line, or comma-separated"
+                rows={3}
+                disabled={busy}
+              />
+            </label>
+            <label className={styles.termLabel}>
+              Whitelist words or phrases not to redact
+              <textarea
+                className={styles.termInput}
+                value={whitelistTerms}
+                onChange={(e) => setWhitelistTerms(e.target.value)}
+                placeholder="Do not redact these terms"
+                rows={3}
+                disabled={busy}
+              />
+            </label>
           </div>
 
           {total === 0 ? (

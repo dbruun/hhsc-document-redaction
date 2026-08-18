@@ -63,7 +63,12 @@ public sealed class DocumentController : ControllerBase
     {
         try
         {
-            var result = await _orchestrator.ApplyAsync(jobId, request.SelectedEntityIds ?? [], ct);
+            var result = await _orchestrator.ApplyAsync(
+                jobId,
+                request.SelectedEntityIds ?? [],
+                request.ManualRedactionTerms,
+                request.WhitelistedTerms,
+                ct);
             return Ok(result);
         }
         catch (ArgumentException ex)

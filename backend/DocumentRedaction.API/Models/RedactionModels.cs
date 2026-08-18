@@ -80,6 +80,8 @@ public record DetectionResponse
 public record ApplyRequest
 {
     public required IReadOnlyList<string> SelectedEntityIds { get; init; }
+    public IReadOnlyList<string> ManualRedactionTerms { get; init; } = Array.Empty<string>();
+    public IReadOnlyList<string> WhitelistedTerms { get; init; } = Array.Empty<string>();
 }
 
 /// <summary>Result of the APPLY phase.</summary>

@@ -139,6 +139,39 @@
   gap: 0.5rem;
 }
 
+.termControls {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  padding: 0.75rem 0.85rem;
+  border-bottom: 1px solid #f3f4f6;
+}
+
+.termLabel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  color: #374151;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.termInput {
+  min-height: 4.5rem;
+  resize: vertical;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  padding: 0.45rem 0.5rem;
+  color: #1f2937;
+  font: inherit;
+  font-weight: 400;
+}
+
+.termInput:disabled {
+  background: #f9fafb;
+  color: #6b7280;
+}
+
 .linkBtn {
   background: none;
   border: none;

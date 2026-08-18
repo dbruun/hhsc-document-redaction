@@ -61,18 +61,70 @@ public class DocumentRedactionOrchestratorTests
             new PiiEntity("Amy", "Person", "Nurse", 0.9, 0, 3),
             new PiiEntity("Cara", "Person", "Doctor", 0.9, 5, 4),
             new PiiEntity("Bob", "Person", "Patient", 0.9, 14, 3));
+        var extracted = new ExtractedDocument(
+            "Amy, Cara and Bob",
+            Array.Empty<PageInfo>(),
+            Array.Empty<LayoutWord>());
         var blob = new FakeBlobStorage();
-        var processor = new FakeProcessor("text/plain");
+        var processor = new FakeProcessor("text/plain", extracted);
         var sut = BuildSut(processor, pii, blob);
 
-        var detection = await sut.DetectAsync(MakeFile("Amy, Cara and Bob", "n.txt", "text/plain"));
+        var detection = await sut.DetectAsync(MakeFile(extracted.Text, "n.txt", "text/plain"));
 
         // Redact the nurse and doctor, keep the patient.
         var apply = await sut.ApplyAsync(detection.JobId, new[] { "e0", "e1" });
 
         Assert.Equal(2, apply.RedactedCount);
-        Assert.Equal(new[] { "e0", "e1" }, processor.LastSelected!.Select(e => e.Id));
-        Assert.DoesNotContain("e2", processor.LastSelected!.Select(e => e.Id));
+        Assert.Equal(new[] { "Amy", "Cara" }, processor.LastSelected!.Select(e => e.Text));
+        Assert.DoesNotContain("Bob", processor.LastSelected!.Select(e => e.Text));
+    }
+
+    [Fact]
+    public async Task ApplyAsync_redacts_manual_terms_everywhere()
+    {
+        var extracted = new ExtractedDocument(
+            "Amy met Bob. Later amy called Cara.",
+            Array.Empty<PageInfo>(),
+            Array.Empty<LayoutWord>());
+        var blob = new FakeBlobStorage();
+        var processor = new FakeProcessor("text/plain", extracted);
+        var sut = BuildSut(processor, new FakePiiClient(), blob);
+
+        var detection = await sut.DetectAsync(
+            MakeFile(extracted.Text, "n.txt", "text/plain"));
+
+        var apply = await sut.ApplyAsync(
+            detection.JobId,
+            Array.Empty<string>(),
+            new[] { "Amy" },
+            Array.Empty<string>());
+
+        Assert.Equal(2, apply.RedactedCount);
+        Assert.Equal(new[] { 0, 19 }, processor.LastSelected!.Select(e => e.Offset));
+        Assert.All(processor.LastSelected!, e => Assert.Equal(3, e.Length));
+    }
+
+    [Fact]
+    public async Task ApplyAsync_excludes_whitelisted_terms_from_selected_and_manual_redactions()
+    {
+        var pii = new FakePiiClient(
+            new PiiEntity("Amy", "Person", "Nurse", 0.9, 0, 3),
+            new PiiEntity("Bob", "Person", "Patient", 0.9, 8, 3));
+        var blob = new FakeBlobStorage();
+        var processor = new FakeProcessor("text/plain");
+        var sut = BuildSut(processor, pii, blob);
+
+        var detection = await sut.DetectAsync(MakeFile("Amy and Bob", "n.txt", "text/plain"));
+
+        var apply = await sut.ApplyAsync(
+            detection.JobId,
+            new[] { "e0", "e1" },
+            new[] { "Amy" },
+            new[] { "Amy" });
+
+        var selected = Assert.Single(processor.LastSelected!);
+        Assert.Equal("Bob", selected.Text);
+        Assert.Equal(1, apply.RedactedCount);
     }
 
     [Fact]
