@@ -31,6 +31,14 @@ public record PageInfo
     public required double Height { get; init; }
 }
 
+/// <summary>A PDF word span and its normalized page position, persisted for manual term matching.</summary>
+public record LayoutWordInfo
+{
+    public required int Offset { get; init; }
+    public required int Length { get; init; }
+    public required DetectedBox Box { get; init; }
+}
+
 /// <summary>
 /// A single detected PII instance. Each instance is independently selectable so the
 /// reviewer can redact, for example, a nurse and a doctor while keeping the patient —
@@ -73,6 +81,7 @@ public record DetectionResponse
     public required int PageCount { get; init; }
     public required IReadOnlyList<PageInfo> Pages { get; init; }
     public required IReadOnlyList<DetectedEntity> Entities { get; init; }
+    public IReadOnlyList<LayoutWordInfo> Words { get; init; } = [];
     public required DateTimeOffset ProcessedAt { get; init; }
 }
 
@@ -80,6 +89,7 @@ public record DetectionResponse
 public record ApplyRequest
 {
     public required IReadOnlyList<string> SelectedEntityIds { get; init; }
+    public IReadOnlyList<string> BlacklistTerms { get; init; } = [];
 }
 
 /// <summary>Result of the APPLY phase.</summary>

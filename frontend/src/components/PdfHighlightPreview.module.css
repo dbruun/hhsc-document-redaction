@@ -1,0 +1,124 @@
+.pdfContainer {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  overflow: auto;
+  max-height: 60vh;
+  padding: 0.75rem;
+  background: #f9fafb;
+}
+
+.pageWrapper {
+  display: flex;
+  justify-content: flex-start;
+  min-width: 100%;
+}
+
+.canvasContainer {
+  position: relative;
+  flex: 0 0 auto;
+  margin: 0 auto;
+  line-height: 0; /* prevent extra space under canvas */
+  background: #fff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.18);
+}
+
+.canvas {
+  display: block;
+}
+
+.overlay {
+  position: absolute;
+  z-index: 2;
+  border: 2px solid;
+  border-radius: 2px;
+  cursor: pointer;
+  padding: 0;
+  background: transparent;
+  box-sizing: border-box;
+  transition: background-color 0.1s;
+}
+
+.wordOverlay {
+  position: absolute;
+  z-index: 1;
+  border: 1px solid transparent;
+  padding: 0;
+  background: transparent;
+  cursor: crosshair;
+  box-sizing: border-box;
+}
+
+.wordOverlay:hover,
+.wordOverlay:focus-visible {
+  border-color: #111827;
+  background: rgba(17, 24, 39, 0.14);
+  outline: none;
+}
+
+.wordOverlaySelected {
+  border-color: #000;
+  background: rgba(0, 0, 0, 0.78);
+}
+
+.overlay:hover {
+  filter: brightness(0.9);
+}
+
+.overlay:focus {
+  outline: 2px solid #2563eb;
+  outline-offset: 1px;
+}
+
+.status {
+  padding: 2rem;
+  text-align: center;
+  color: #6b7280;
+  font-size: 0.9rem;
+}
+
+.pdfToolbar {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-width: 100%;
+  padding: 0.4rem 0.55rem;
+  border: 1px solid #d1d5db;
+  background: rgba(255, 255, 255, 0.96);
+  color: #4b5563;
+  font-size: 0.78rem;
+  box-sizing: border-box;
+}
+
+.zoomControls {
+  display: inline-flex;
+  align-items: center;
+}
+
+.zoomControls button {
+  width: 2rem;
+  height: 1.75rem;
+  border: 1px solid #d1d5db;
+  background: #fff;
+  color: #1f2937;
+  cursor: pointer;
+  font-size: 1rem;
+}
+
+.zoomControls button + button {
+  border-left: 0;
+}
+
+.zoomControls button:disabled {
+  cursor: default;
+  color: #9ca3af;
+}
+
+.zoomControls .zoomValue {
+  width: 3.5rem;
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+}

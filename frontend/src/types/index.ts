@@ -12,6 +12,12 @@ export interface PageInfo {
   height: number;
 }
 
+export interface LayoutWordInfo {
+  offset: number;
+  length: number;
+  box: DetectedBox;
+}
+
 export interface DetectedEntity {
   id: string;
   text: string;
@@ -32,6 +38,7 @@ export interface DetectionResponse {
   pageCount: number;
   pages: PageInfo[];
   entities: DetectedEntity[];
+  words: LayoutWordInfo[];
   processedAt: string;
 }
 

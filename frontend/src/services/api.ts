@@ -38,11 +38,12 @@ export async function detectDocument(file: File): Promise<DetectionResponse> {
 export async function applyRedactions(
   jobId: string,
   selectedEntityIds: string[],
+  blacklistTerms: string[],
 ): Promise<ApplyResponse> {
   const response = await fetch(`${API_BASE}/document/${jobId}/apply`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ selectedEntityIds }),
+    body: JSON.stringify({ selectedEntityIds, blacklistTerms }),
   });
 
   if (!response.ok) throw new Error(await readError(response));

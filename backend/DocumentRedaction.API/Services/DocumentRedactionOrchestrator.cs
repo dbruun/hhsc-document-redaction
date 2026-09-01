@@ -85,6 +85,12 @@ public sealed class DocumentRedactionOrchestrator : IDocumentRedactionOrchestrat
             PageCount = extracted.Pages.Count,
             Pages = extracted.Pages,
             Entities = entities,
+            Words = extracted.Words.Select(word => new LayoutWordInfo
+            {
+                Offset = word.Offset,
+                Length = word.Length,
+                Box = word.Box
+            }).ToList(),
             ProcessedAt = DateTimeOffset.UtcNow
         };
 
@@ -95,7 +101,10 @@ public sealed class DocumentRedactionOrchestrator : IDocumentRedactionOrchestrat
     }
 
     public async Task<ApplyResponse> ApplyAsync(
-        string jobId, IReadOnlyList<string> selectedEntityIds, CancellationToken ct = default)
+        string jobId,
+        IReadOnlyList<string> selectedEntityIds,
+        IReadOnlyList<string> blacklistTerms,
+        CancellationToken ct = default)
     {
         var stateJson = await _blobStorage.DownloadStateAsync(jobId, ct)
             ?? throw new ArgumentException($"Unknown job '{jobId}'.");
@@ -104,6 +113,9 @@ public sealed class DocumentRedactionOrchestrator : IDocumentRedactionOrchestrat
 
         var selectedSet = selectedEntityIds.ToHashSet(StringComparer.Ordinal);
         var selected = state.Entities.Where(e => selectedSet.Contains(e.Id)).ToList();
+        var selectedSpans = selected.Select(entity => (entity.Offset, entity.Length)).ToHashSet();
+        selected.AddRange(BuildBlacklistEntities(state, blacklistTerms)
+            .Where(entity => selectedSpans.Add((entity.Offset, entity.Length))));
 
         var original = await _blobStorage.DownloadOriginalAsync(jobId, ct)
             ?? throw new ArgumentException($"Original document for job '{jobId}' not found.");
@@ -112,7 +124,7 @@ public sealed class DocumentRedactionOrchestrator : IDocumentRedactionOrchestrat
 
         _logger.LogInformation(
             "Apply job {JobId}: redacting {Selected} of {Total} instance(s).",
-            jobId, selected.Count, state.Entities.Count);
+            jobId.Replace('\r', '_').Replace('\n', '_'), selected.Count, state.Entities.Count);
 
         var redacted = await processor.RedactAsync(original.Content, selected, ct);
 
@@ -129,6 +141,62 @@ public sealed class DocumentRedactionOrchestrator : IDocumentRedactionOrchestrat
             FileName = state.FileName,
             ProcessedAt = DateTimeOffset.UtcNow
         };
+    }
+
+    private static IReadOnlyList<DetectedEntity> BuildBlacklistEntities(
+        DetectionResponse state, IReadOnlyList<string> blacklistTerms)
+    {
+        var words = state.Words
+            .Select(word => new LayoutWord(word.Offset, word.Length, word.Box))
+            .ToList();
+        var terms = blacklistTerms
+            .Select(term => term.Trim())
+            .Where(term => term.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (terms.Count > 100 || terms.Any(term => term.Length > 500))
+            throw new ArgumentException("The redact-everywhere list supports up to 100 terms of 500 characters each.");
+
+        var entities = new List<DetectedEntity>();
+        foreach (var term in terms)
+        {
+            var searchFrom = 0;
+            while (searchFrom <= state.ExtractedText.Length - term.Length)
+            {
+                var offset = state.ExtractedText.IndexOf(term, searchFrom, StringComparison.OrdinalIgnoreCase);
+                if (offset < 0)
+                    break;
+
+                searchFrom = offset + term.Length;
+                if (!HasTermBoundaries(state.ExtractedText, offset, term.Length))
+                    continue;
+
+                entities.Add(new DetectedEntity
+                {
+                    Id = $"blacklist-{entities.Count}",
+                    Text = state.ExtractedText.Substring(offset, term.Length),
+                    Category = "Blacklist",
+                    SubCategory = null,
+                    ConfidenceScore = 1,
+                    Offset = offset,
+                    Length = term.Length,
+                    Boxes = MapBoxes(offset, term.Length, words)
+                });
+            }
+        }
+
+        return entities;
+    }
+
+    private static bool HasTermBoundaries(string text, int offset, int length)
+    {
+        var startsWithWordCharacter = char.IsLetterOrDigit(text[offset]);
+        var endsWithWordCharacter = char.IsLetterOrDigit(text[offset + length - 1]);
+        var validStart = !startsWithWordCharacter || offset == 0 || !char.IsLetterOrDigit(text[offset - 1]);
+        var end = offset + length;
+        var validEnd = !endsWithWordCharacter || end == text.Length || !char.IsLetterOrDigit(text[end]);
+        return validStart && validEnd;
     }
 
     public Task<BlobStream?> OpenOriginalAsync(string jobId, CancellationToken ct = default) =>
@@ -163,8 +231,12 @@ public sealed class DocumentRedactionOrchestrator : IDocumentRedactionOrchestrat
     }
 
     /// <summary>
-    /// Maps an entity span to one bounding box per page by unioning the boxes of every word
-    /// whose span overlaps it. Empty for TXT/DOCX (no word geometry).
+    /// Maps an entity span to one bounding box per text line per page by unioning the boxes of
+    /// every matched word within the same line. Two words are considered on the same line when
+    /// the center-Y of one falls within the vertical extent of the other (with a tolerance of
+    /// half the minimum word height). This prevents a multi-line or multi-column entity from
+    /// producing a single giant box that blacks out unrelated content between the words.
+    /// Empty for TXT/DOCX (no word geometry).
     /// </summary>
     private static IReadOnlyList<DetectedBox> MapBoxes(int offset, int length, IReadOnlyList<LayoutWord> words)
     {
@@ -172,40 +244,83 @@ public sealed class DocumentRedactionOrchestrator : IDocumentRedactionOrchestrat
             return Array.Empty<DetectedBox>();
 
         var spanEnd = offset + length;
-        var perPage = new Dictionary<int, (double MinX, double MinY, double MaxX, double MaxY)>();
 
+        // Collect words whose character span overlaps the entity span.
+        var matched = new List<LayoutWord>();
         foreach (var word in words)
         {
             var wordEnd = word.Offset + word.Length;
             if (word.Offset >= spanEnd || offset >= wordEnd) continue; // no overlap
+            matched.Add(word);
+        }
 
+        if (matched.Count == 0)
+            return Array.Empty<DetectedBox>();
+
+        // Group matched words into per-line buckets. Two words belong to the same line when
+        // they share the same page and the center-Y of one falls within the [Y, Y+Height]
+        // band of the other (using a tolerance of 0.5 × min word height).
+        var lineBuckets = new List<(int Page, double MinX, double MinY, double MaxX, double MaxY)>();
+
+        foreach (var word in matched)
+        {
             var b = word.Box;
+            var centerY = b.Y + b.Height / 2.0;
             var right = b.X + b.Width;
             var bottom = b.Y + b.Height;
 
-            if (perPage.TryGetValue(b.Page, out var cur))
+            var merged = false;
+            for (var i = 0; i < lineBuckets.Count; i++)
             {
-                perPage[b.Page] = (
-                    Math.Min(cur.MinX, b.X),
-                    Math.Min(cur.MinY, b.Y),
-                    Math.Max(cur.MaxX, right),
-                    Math.Max(cur.MaxY, bottom));
+                var line = lineBuckets[i];
+                if (line.Page != b.Page) continue;
+
+                // Tolerance: half the minimum height of the two words.
+                var lineHeight = line.MaxY - line.MinY;
+                var tolerance = Math.Min(b.Height, lineHeight) * 0.5;
+                var lineCenterY = (line.MinY + line.MaxY) / 2.0;
+
+                // Merge if this word's center-Y is within the bucket's vertical band (±tolerance).
+                if (centerY >= line.MinY - tolerance && centerY <= line.MaxY + tolerance)
+                {
+                    lineBuckets[i] = (
+                        line.Page,
+                        Math.Min(line.MinX, b.X),
+                        Math.Min(line.MinY, b.Y),
+                        Math.Max(line.MaxX, right),
+                        Math.Max(line.MaxY, bottom));
+                    merged = true;
+                    break;
+                }
+                // Also merge if the bucket's center-Y is within this word's band (±tolerance).
+                if (lineCenterY >= b.Y - tolerance && lineCenterY <= bottom + tolerance)
+                {
+                    lineBuckets[i] = (
+                        line.Page,
+                        Math.Min(line.MinX, b.X),
+                        Math.Min(line.MinY, b.Y),
+                        Math.Max(line.MaxX, right),
+                        Math.Max(line.MaxY, bottom));
+                    merged = true;
+                    break;
+                }
             }
-            else
-            {
-                perPage[b.Page] = (b.X, b.Y, right, bottom);
-            }
+
+            if (!merged)
+                lineBuckets.Add((b.Page, b.X, b.Y, right, bottom));
         }
 
-        return perPage
-            .OrderBy(kv => kv.Key)
-            .Select(kv => new DetectedBox
+        return lineBuckets
+            .OrderBy(l => l.Page)
+            .ThenBy(l => l.MinY)
+            .ThenBy(l => l.MinX)
+            .Select(l => new DetectedBox
             {
-                Page = kv.Key,
-                X = kv.Value.MinX,
-                Y = kv.Value.MinY,
-                Width = kv.Value.MaxX - kv.Value.MinX,
-                Height = kv.Value.MaxY - kv.Value.MinY
+                Page = l.Page,
+                X = l.MinX,
+                Y = l.MinY,
+                Width = l.MaxX - l.MinX,
+                Height = l.MaxY - l.MinY
             })
             .ToList();
     }

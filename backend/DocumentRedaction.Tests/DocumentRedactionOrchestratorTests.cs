@@ -55,6 +55,38 @@ public class DocumentRedactionOrchestratorTests
     }
 
     [Fact]
+    public async Task DetectAsync_emits_one_box_per_line_for_multiline_entity()
+    {
+        // "Jane\nDoe": two words on clearly different lines — should produce two separate boxes,
+        // not a single giant box spanning the gap between the lines.
+        var extracted = new ExtractedDocument(
+            Text: "Jane\nDoe",
+            Pages: new[] { new PageInfo { Page = 1, Width = 8.5, Height = 11 } },
+            Words: new[]
+            {
+                new LayoutWord(0, 4, Box(1, 0.10, 0.10, 0.08, 0.02)), // "Jane" — line 1, Y 0.10..0.12
+                new LayoutWord(5, 3, Box(1, 0.10, 0.20, 0.07, 0.02)), // "Doe"  — line 2, Y 0.20..0.22
+            });
+        var processor = new FakeProcessor("application/pdf", extracted);
+        // Entity spans the full text "Jane\nDoe" (offset 0, length 8)
+        var pii = new FakePiiClient(new PiiEntity("Jane\nDoe", "Person", null, 0.95, 0, 8));
+        var sut = BuildSut(processor, pii, new FakeBlobStorage());
+
+        var result = await sut.DetectAsync(MakeFile("%PDF-1.4", "scan.pdf", "application/pdf"));
+
+        var boxes = result.Entities[0].Boxes;
+        Assert.Equal(2, boxes.Count);
+
+        // Each box should be tight around its line — neither box's height should span the gap.
+        Assert.All(boxes, b => Assert.True(b.Height <= 0.03, $"Box height {b.Height} is unexpectedly large"));
+
+        // Boxes should be on page 1 and ordered by Y.
+        Assert.Equal(1, boxes[0].Page);
+        Assert.Equal(1, boxes[1].Page);
+        Assert.True(boxes[0].Y < boxes[1].Y, "First box should be above the second");
+    }
+
+    [Fact]
     public async Task ApplyAsync_redacts_only_the_selected_instances()
     {
         var pii = new FakePiiClient(
@@ -68,11 +100,48 @@ public class DocumentRedactionOrchestratorTests
         var detection = await sut.DetectAsync(MakeFile("Amy, Cara and Bob", "n.txt", "text/plain"));
 
         // Redact the nurse and doctor, keep the patient.
-        var apply = await sut.ApplyAsync(detection.JobId, new[] { "e0", "e1" });
+        var apply = await sut.ApplyAsync(detection.JobId, new[] { "e0", "e1" }, []);
 
         Assert.Equal(2, apply.RedactedCount);
         Assert.Equal(new[] { "e0", "e1" }, processor.LastSelected!.Select(e => e.Id));
         Assert.DoesNotContain("e2", processor.LastSelected!.Select(e => e.Id));
+    }
+
+    [Fact]
+    public async Task ApplyAsync_redacts_every_whole_term_occurrence_case_insensitively()
+    {
+        var extracted = new ExtractedDocument(
+            "Ann met ANN and Joanne",
+            [new PageInfo { Page = 1, Width = 8.5, Height = 11 }],
+            [
+                new LayoutWord(0, 3, Box(1, 0.10, 0.10, 0.05, 0.02)),
+                new LayoutWord(8, 3, Box(1, 0.25, 0.10, 0.05, 0.02)),
+                new LayoutWord(16, 6, Box(1, 0.40, 0.10, 0.10, 0.02))
+            ]);
+        var processor = new FakeProcessor("application/pdf", extracted);
+        var sut = BuildSut(processor, new FakePiiClient(), new FakeBlobStorage());
+        var detection = await sut.DetectAsync(MakeFile("%PDF-1.4", "scan.pdf", "application/pdf"));
+
+        var apply = await sut.ApplyAsync(detection.JobId, [], ["ann"]);
+
+        Assert.Equal(2, apply.RedactedCount);
+        Assert.Equal(new[] { 0, 8 }, processor.LastSelected!.Select(entity => entity.Offset));
+        Assert.All(processor.LastSelected!, entity => Assert.Single(entity.Boxes));
+    }
+
+    [Fact]
+    public async Task ApplyAsync_counts_a_selected_blacklist_match_once()
+    {
+        var processor = new FakeProcessor("text/plain", new ExtractedDocument(
+            "Amy met Amy", [], []));
+        var pii = new FakePiiClient(new PiiEntity("Amy", "Person", null, 0.99, 0, 3));
+        var sut = BuildSut(processor, pii, new FakeBlobStorage());
+        var detection = await sut.DetectAsync(MakeFile("Amy met Amy", "names.txt", "text/plain"));
+
+        var apply = await sut.ApplyAsync(detection.JobId, ["e0"], ["amy"]);
+
+        Assert.Equal(2, apply.RedactedCount);
+        Assert.Equal(new[] { 0, 8 }, processor.LastSelected!.Select(entity => entity.Offset));
     }
 
     [Fact]
@@ -81,7 +150,7 @@ public class DocumentRedactionOrchestratorTests
         var sut = BuildSut(new FakeProcessor("text/plain"), new FakePiiClient(), new FakeBlobStorage());
 
         await Assert.ThrowsAsync<ArgumentException>(
-            () => sut.ApplyAsync("does-not-exist", new[] { "e0" }));
+            () => sut.ApplyAsync("does-not-exist", new[] { "e0" }, []));
     }
 
     [Theory]

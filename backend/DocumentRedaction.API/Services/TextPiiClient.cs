@@ -24,8 +24,9 @@ public sealed class TextPiiClient : ITextPiiClient
 {
     private const string ApiVersion = "2024-11-15-preview";
 
-    /// The Language text endpoint accepts up to 125,000 characters per document; leave headroom.
-    private const int MaxChunkChars = 120_000;
+    /// The synchronous endpoint accepts at most 5,120 characters per document.
+    private const int MaxChunkChars = 5_000;
+    private const int ChunkOverlapChars = 250;
 
     private static readonly string[] CognitiveServicesScopes = { "https://cognitiveservices.azure.com/.default" };
 
@@ -55,7 +56,6 @@ public sealed class TextPiiClient : ITextPiiClient
 
         var results = new List<PiiEntity>();
 
-        // Chunk long documents at line boundaries; adjust offsets back to the full text.
         foreach (var (chunk, baseOffset) in Chunk(text))
         {
             var entities = await DetectChunkAsync(chunk, ct);
@@ -63,7 +63,12 @@ public sealed class TextPiiClient : ITextPiiClient
                 results.Add(e with { Offset = e.Offset + baseOffset });
         }
 
-        return results;
+        return results
+            .GroupBy(entity => (entity.Offset, entity.Length, entity.Category, entity.SubCategory))
+            .Select(group => group.OrderByDescending(entity => entity.ConfidenceScore).First())
+            .OrderBy(entity => entity.Offset)
+            .ThenByDescending(entity => entity.Length)
+            .ToList();
     }
 
     private async Task<IReadOnlyList<PiiEntity>> DetectChunkAsync(string text, CancellationToken ct)
@@ -100,7 +105,15 @@ public sealed class TextPiiClient : ITextPiiClient
         using var doc = JsonDocument.Parse(body);
         var root = doc.RootElement;
 
-        if (!root.TryGetProperty("results", out var resultsEl)
+        if (root.TryGetProperty("results", out var resultsEl)
+            && resultsEl.TryGetProperty("errors", out var errorsEl)
+            && errorsEl.GetArrayLength() > 0)
+        {
+            throw new InvalidOperationException(
+                $"Language PII rejected a document chunk: {errorsEl[0].GetRawText()}");
+        }
+
+        if (!root.TryGetProperty("results", out resultsEl)
             || !resultsEl.TryGetProperty("documents", out var docsEl)
             || docsEl.GetArrayLength() == 0)
         {
@@ -149,7 +162,9 @@ public sealed class TextPiiClient : ITextPiiClient
             }
 
             yield return (text[pos..end], pos);
-            pos = end;
+            pos = end < text.Length
+                ? Math.Max(pos + 1, end - ChunkOverlapChars)
+                : end;
         }
     }
 
